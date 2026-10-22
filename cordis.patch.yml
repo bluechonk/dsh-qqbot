@@ -18,7 +18,15 @@
         appSecret: __FROM_ENV__
         # provider/model 留空：从宿主默认模型路由继承
         # 用户可通过 /model 命令在聊天中切换
-        requireMention: true
+        #
+        # 默认取向：不做「必须 @ 才回」的复读机，而是像群友一样自己判断该不该接话
+        requireMention: false
+        # 群聊不支持流式（QQ 没有群消息流式接口），默认关闭避免误期待
+        streaming: false
+        # 工具调用结果默认不展示，只说话不刷屏
+        showToolResults: false
+        proactive:
+          enabled: true
         textChunkLimit: 4500
         sessionIdleTimeout: 1800000
         maxQueue: 20

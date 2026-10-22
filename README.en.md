@@ -98,8 +98,8 @@ Configuration lives in the `im-qqbot` entry of the profile's `cordis.patch.yml`,
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `requireMention` | boolean | `true` | Whether group messages must @ the bot (superseded by the gate when proactive mode is on) |
-| `streaming` | boolean | `true` | Stream replies (always off in group chats) |
+| `requireMention` | boolean | `false` | Whether group messages must @ the bot (superseded by the gate when proactive mode is on) |
+| `streaming` | boolean | `false` | Stream replies (always off in group chats) |
 | `showToolResults` | boolean | `false` | Show successful tool results (errors always shown) |
 | `debug` | boolean | `false` | Debug mode |
 | `provider` | string | - | LLM provider name; empty inherits the host default |
@@ -111,7 +111,7 @@ Configuration lives in the `im-qqbot` entry of the profile's `cordis.patch.yml`,
 | `access.c2cAllow` | string[] | `[]` | Private chat allowlist (user openid) |
 | `access.groupMode` | `open`/`allowlist`/`disabled` | `open` | Group chat access mode |
 | `access.groupAllow` | string[] | `[]` | Group chat allowlist (group openid) |
-| `proactive.enabled` | boolean | `false` | Master switch for speaking up on her own |
+| `proactive.enabled` | boolean | `true` | Master switch for speaking up on her own |
 | `proactive.minScore` | number | `0.55` | Pass threshold (0~1) |
 | `proactive.cooldownMs` | number | `120000` | Minimum gap between two proactive replies in one group (ms) |
 | `proactive.maxPerHour` | number | `6` | Proactive replies per group per hour, 0 means unlimited |

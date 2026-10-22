@@ -139,7 +139,7 @@ export const AccessControlSchema: Schema<AccessControlConfig> = Schema.object({
 
 /** 自主接话子 Schema */
 export const ProactiveSchema: Schema<ProactiveConfig> = Schema.object({
-  enabled: Schema.boolean().default(false).description('启用自主接话（未被点名时由系统判断是否值得回应）'),
+  enabled: Schema.boolean().default(true).description('启用自主接话（未被点名时由系统判断是否值得回应）'),
   minScore: Schema.number().default(0.55).description('自主接话放行门槛(0~1)'),
   cooldownMs: Schema.number().default(120000).description('同群两次主动接话的最小间隔(ms)'),
   maxPerHour: Schema.number().default(6).description('同群每小时主动接话上限，0=不限制'),
@@ -154,11 +154,11 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
   model: Schema.string().description('Model name'),
   preset: Schema.string().description('Agent preset id'),
   cwd: Schema.string().description('Agent working directory'),
-  requireMention: Schema.boolean().default(true).description('群聊是否需要@bot触发'),
+  requireMention: Schema.boolean().default(false).description('群聊是否需要@bot触发'),
   groupPrompt: Schema.string().description('群聊额外system prompt'),
   directPrompt: Schema.string().description('私聊额外system prompt'),
   textChunkLimit: Schema.number().default(4500).description('单条消息最大字符数'),
-  streaming: Schema.boolean().default(true).description('是否启用流式输出（群聊始终不启用）'),
+  streaming: Schema.boolean().default(false).description('是否启用流式输出（群聊始终不启用）'),
   replyDelayMs: Schema.number().default(1200).description('回复延迟基础值(ms)，0=关闭（拟人节奏）'),
   replyDelayPerCharMs: Schema.number().default(80).description('回复延迟每字增量(ms)'),
   replyDelayJitterMs: Schema.number().default(1500).description('回复延迟随机抖动上限(ms)'),
@@ -175,7 +175,7 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
     groupAllow: [],
   }).description('访问控制'),
   proactive: ProactiveSchema.default({
-    enabled: false,
+    enabled: true,
     minScore: 0.55,
     cooldownMs: 120000,
     maxPerHour: 6,

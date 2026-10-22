@@ -96,8 +96,8 @@ pnpm build     # tsc（宿主半 → dist/）&& tsdown（浏览器半 → lib/cl
 
 | 配置 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `requireMention` | boolean | `true` | 群聊是否必须 @ 机器人才回应（自主接话开启时由判定接管） |
-| `streaming` | boolean | `true` | 是否启用流式输出（群聊始终不启用） |
+| `requireMention` | boolean | `false` | 群聊是否必须 @ 机器人才回应（自主接话开启时由判定接管） |
+| `streaming` | boolean | `false` | 是否启用流式输出（群聊始终不启用） |
 | `showToolResults` | boolean | `false` | 是否展示工具调用成功结果（错误始终展示） |
 | `debug` | boolean | `false` | 调试模式 |
 | `provider` | string | - | LLM 提供商名称，留空继承宿主默认 |
@@ -109,7 +109,7 @@ pnpm build     # tsc（宿主半 → dist/）&& tsdown（浏览器半 → lib/cl
 | `access.c2cAllow` | string[] | `[]` | 私聊白名单（user openid） |
 | `access.groupMode` | `open`/`allowlist`/`disabled` | `open` | 群聊访问模式 |
 | `access.groupAllow` | string[] | `[]` | 群聊白名单（group openid） |
-| `proactive.enabled` | boolean | `false` | 自主接话总开关 |
+| `proactive.enabled` | boolean | `true` | 自主接话总开关 |
 | `proactive.minScore` | number | `0.55` | 放行门槛（0~1） |
 | `proactive.cooldownMs` | number | `120000` | 同群两次主动接话的最小间隔（ms） |
 | `proactive.maxPerHour` | number | `6` | 同群每小时主动接话上限，0 = 不限制 |
