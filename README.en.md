@@ -104,6 +104,7 @@ Configuration lives in the `im-qqbot` entry of the profile's `cordis.patch.yml`,
 | `debug` | boolean | `false` | Debug mode |
 | `provider` | string | - | LLM provider name; empty inherits the host default |
 | `model` | string | - | Model name; empty inherits the host default |
+| `reasoningEffort` | `off`/`low`/`medium`/`high`/`max` | - | Reasoning effort; empty lets the host decide (`off` recommended for qqchat) |
 | `preset` | string | `qqchat` | Fixed; kept only for backward compatibility |
 | `groupPrompt` | string | - | Extra system prompt for group chats |
 | `directPrompt` | string | - | Extra system prompt for private chats |

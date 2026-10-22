@@ -19,7 +19,7 @@ import {
   type SetupCredentials,
 } from './persist.ts';
 import { getProfileDir } from '../shared/index.ts';
-import { AccessControlSchema, ProactiveSchema } from '../config.ts';
+import { AccessControlSchema, ProactiveSchema, REASONING_EFFORT_VALUES as REASONING_EFFORT_VALUES_FROM_CONFIG } from '../config.ts';
 import {
   BIND_CONFIG_PATH,
   BIND_MANUAL_PATH,
@@ -107,13 +107,21 @@ function profileDirOf(options: BindRoutesOptions): string | undefined {
   return getProfileDir() ?? undefined;
 }
 
-/** 可经 UI 编辑的配置键（白名单：只收用户必要的字段，其余走 patch/env） */const EDITABLE_CONFIG_KEYS = new Set([
+/** 可经 UI 编辑的配置键（白名单：只收用户必要的字段，其余走 patch/env） */
+const EDITABLE_CONFIG_KEYS = new Set([
   'requireMention', 'streaming', 'showToolResults', 'debug',
-  'provider', 'model', 'preset',
+  'provider', 'model', 'preset', 'reasoningEffort',
   'groupPrompt', 'directPrompt',
   'access', 'proactive',
   'replyDelayMs', 'replyDelayPerCharMs', 'replyDelayJitterMs', 'replyDelayMaxMs',
 ]);
+
+/**
+ * 思考强度合法值（与 dsh-llm 的 ReasoningEffortId 对齐）
+ *
+ * 空串不在其中：它表示"不覆盖"，由宿主/模型默认决定，是合法输入。
+ */
+const REASONING_EFFORT_VALUES = REASONING_EFFORT_VALUES_FROM_CONFIG;
 
 /** 白名单键的子 Schema（服务端校验：客户端校验仅为体验，安全边界在宿主） */
 const EDITABLE_CONFIG_SCHEMAS: Record<string, (value: unknown) => unknown> = {
@@ -124,6 +132,15 @@ const EDITABLE_CONFIG_SCHEMAS: Record<string, (value: unknown) => unknown> = {
   provider: stringSchema('provider'),
   model: stringSchema('model'),
   preset: stringSchema('preset'),
+  reasoningEffort: (v) => {
+    // 空串/undefined 表示"不覆盖"，与显式 off 是两回事，必须保留区分
+    if (v === undefined || v === null || v === '') return '';
+    if (typeof v !== 'string') throw new TypeError('reasoningEffort 必须是字符串');
+    if (!(REASONING_EFFORT_VALUES as readonly string[]).includes(v)) {
+      throw new TypeError(`reasoningEffort 必须是 ${REASONING_EFFORT_VALUES.join('/')} 之一`);
+    }
+    return v;
+  },
   groupPrompt: stringSchema('groupPrompt'),
   directPrompt: stringSchema('directPrompt'),
   access: (v) => AccessControlSchema(v as never),

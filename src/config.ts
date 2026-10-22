@@ -2,6 +2,11 @@
  * dsh-im-qqbot 插件配置 Schema
  */
 import Schema from '@deepseek-ai/schemastery';
+import type { ReasoningEffort } from './model/types.ts';
+
+/** 思考强度合法值（与 dsh-llm 的 ReasoningEffortId 对齐） */
+export const REASONING_EFFORT_VALUES = ['off', 'low', 'medium', 'high', 'max'] as const;
+export type { ReasoningEffort } from './model/types.ts';
 
 export interface AccessControlConfig {
   /** C2C 访问模式 */
@@ -67,6 +72,12 @@ export interface ImQQBotConfig {
   model?: string;
   /** Agent preset id（已固定为 qqchat；此项不再生效，仅为兼容旧配置保留） */
   preset?: string;
+  /**
+   * 思考强度：off / low / medium / high / max
+   * 留空表示不覆盖，由宿主与模型默认决定。
+   * qqchat 是陪聊模式，默认 off——秒回、话少，别让用户等思考。
+   */
+  reasoningEffort?: ReasoningEffort;
   /** Agent 工作目录（缺省回落到进程 cwd） */
   cwd?: string;
   /** 是否启用群消息 @mention 门控 */
@@ -153,6 +164,8 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
   provider: Schema.string().description('LLM provider name'),
   model: Schema.string().description('Model name'),
   preset: Schema.string().description('Agent preset id'),
+  reasoningEffort: Schema.union(['off', 'low', 'medium', 'high', 'max']).description(
+    '思考强度：off/low/medium/high/max，留空由宿主决定（qqchat 陪聊建议 off）'),
   cwd: Schema.string().description('Agent working directory'),
   requireMention: Schema.boolean().default(false).description('群聊是否需要@bot触发'),
   groupPrompt: Schema.string().description('群聊额外system prompt'),

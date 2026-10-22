@@ -52,7 +52,7 @@ export class ModelResolver {
    * 优先级：per-peer 偏好 > config 显式指定 > settings.yaml > 宿主服务
    */
   getEffectiveRoute(sessionKey: string): ModelRoute | undefined {
-    return this.prefs.getOverride(sessionKey) ?? this.resolveDefault();
+    return this.withReasoning(this.prefs.getOverride(sessionKey) ?? this.resolveDefault());
   }
 
   /**
@@ -67,13 +67,27 @@ export class ModelResolver {
    */
   getResumeRoute(sessionKey: string): ModelRoute | undefined {
     const override = this.prefs.getOverride(sessionKey);
-    if (override) return override;
+    if (override) return this.withReasoning(override);
 
     if (this.config.provider && this.config.model) {
-      return { provider: this.config.provider, model: this.config.model };
+      return this.withReasoning({ provider: this.config.provider, model: this.config.model });
     }
 
-    return this.resolveDefault();
+    return this.withReasoning(this.resolveDefault());
+  }
+
+  /**
+   * 把配置里的思考强度注入路由。
+   *
+   * 未配置时**不写这个字段**（undefined 与「显式 off」是两回事）：
+   * 前者让宿主/模型自己决定，后者是明确关掉思考。
+   */
+  private withReasoning(route: ModelRoute | undefined): ModelRoute | undefined {
+    const effort = this.config.reasoningEffort;
+    if (route === undefined || effort === undefined || effort === null) return route;
+    // 设置面板用空串表示"不覆盖"，这里同样归一化掉
+    if (String(effort) === '') return route;
+    return { ...route, reasoningEffort: effort as ModelRoute['reasoningEffort'] };
   }
 
   /**

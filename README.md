@@ -102,6 +102,7 @@ pnpm build     # tsc（宿主半 → dist/）&& tsdown（浏览器半 → lib/cl
 | `debug` | boolean | `false` | 调试模式 |
 | `provider` | string | - | LLM 提供商名称，留空继承宿主默认 |
 | `model` | string | - | 模型名称，留空继承宿主默认 |
+| `reasoningEffort` | `off`/`low`/`medium`/`high`/`max` | - | 思考强度，留空由宿主决定（qqchat 建议 `off`） |
 | `preset` | string | `qqchat` | 已固定，不生效，仅为兼容旧配置保留 |
 | `groupPrompt` | string | - | 群聊额外 system prompt |
 | `directPrompt` | string | - | 私聊额外 system prompt |

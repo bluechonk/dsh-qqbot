@@ -44,6 +44,8 @@ type ConfigWire = {
   provider?: string;
   model?: string;
   preset?: string;
+  /** 思考强度：off/low/medium/high/max，空串或 undefined 表示不覆盖 */
+  reasoningEffort?: string;
   groupPrompt?: string;
   directPrompt?: string;
   access?: AccessControlWire;
@@ -111,6 +113,10 @@ function useConfigPanelStyles(): void {
 .imqb2-input:focus { outline: none; border-color: var(--dsw-alias-state-business-primary); }
 .imqb2-input:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
 .imqb2-textarea { height: auto; min-height: 68px; padding: 8px 12px; resize: vertical; line-height: 1.5; }
+.imqb2-select { padding-right: 28px; cursor: pointer; appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 14px center, right 9px center; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+.imqb2-select option { background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); }
 /* 分段控件（官方 SegmentedControl 复刻：指示器按段数/索引定位） */
 .imqb2-seg {
   position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr;
@@ -216,6 +222,22 @@ function FieldRow({ label, help, value, placeholder, onChange }: {
       className: 'imqb2-input', value, placeholder, spellCheck: false,
       onChange: (event: ChangeEvent<HTMLInputElement>) => { onChange(event.currentTarget.value); },
     }),
+    help === undefined ? null : createElement('p', { className: 'imqb2-hint' }, help),
+  );
+}
+
+/** 下拉行（label 上 + select 下） */
+function SelectRow({ label, help, value, options, onChange }: {
+  label: string; help?: string; value: string;
+  options: Array<{ value: string; label: string }>; onChange: (next: string) => void;
+}): ReactNode {
+  return createElement('div', { className: 'imqb2-field' },
+    createElement('span', { className: 'imqb2-label' }, label),
+    createElement('select', {
+      className: 'imqb2-input imqb2-select', value,
+      onChange: (event: ChangeEvent<HTMLSelectElement>) => { onChange(event.currentTarget.value); },
+    }, options.map((opt) =>
+      createElement('option', { key: opt.value, value: opt.value }, opt.label))),
     help === undefined ? null : createElement('p', { className: 'imqb2-hint' }, help),
   );
 }
@@ -497,9 +519,19 @@ export function ConfigPanel(): ReactNode {
       label: 'Model', value: form.model ?? '', placeholder: '留空继承宿主默认',
       onChange: (v) => { patch('model', v); },
     }),
-    createElement(FieldRow, {
-      label: 'Preset', value: form.preset ?? '', placeholder: 'Agent preset id',
-      onChange: (v) => { patch('preset', v); },
+    createElement(SelectRow, {
+      label: '思考模式',
+      value: form.reasoningEffort ?? '',
+      options: [
+        { value: '', label: '不覆盖（跟随宿主默认）' },
+        { value: 'off', label: '关闭 —— 秒回，适合陪聊' },
+        { value: 'low', label: '低' },
+        { value: 'medium', label: '中' },
+        { value: 'high', label: '高' },
+        { value: 'max', label: '最高' },
+      ],
+      help: 'qqchat 是陪聊模式，建议关闭思考——回复更快、话更少，也更有"随口一说"的感觉',
+      onChange: (v) => { patch('reasoningEffort', v); },
     }),
 
     createElement('div', { className: 'imqb2-group-title' }, '个性化提示词'),
