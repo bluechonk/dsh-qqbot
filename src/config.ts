@@ -79,6 +79,14 @@ export interface ImQQBotConfig {
   textChunkLimit: number;
   /** 是否启用流式输出（群聊始终不启用） */
   streaming: boolean;
+  /** 回复延迟：基础延迟(ms)，0=关闭（拟人节奏，秒回最像机器人） */
+  replyDelayMs: number;
+  /** 回复延迟：每字额外延迟(ms) */
+  replyDelayPerCharMs: number;
+  /** 回复延迟：随机抖动上限(ms) */
+  replyDelayJitterMs: number;
+  /** 回复延迟：单次上限(ms)，0=不封顶 */
+  replyDelayMaxMs: number;
   /** 每会话最大闲置时长(ms)，超时自动回收 */
   sessionIdleTimeout: number;
   /** 并发队列最大长度 */
@@ -123,6 +131,10 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
   directPrompt: Schema.string().description('私聊额外system prompt'),
   textChunkLimit: Schema.number().default(4500).description('单条消息最大字符数'),
   streaming: Schema.boolean().default(true).description('是否启用流式输出（群聊始终不启用）'),
+  replyDelayMs: Schema.number().default(1200).description('回复延迟基础值(ms)，0=关闭（拟人节奏）'),
+  replyDelayPerCharMs: Schema.number().default(80).description('回复延迟每字增量(ms)'),
+  replyDelayJitterMs: Schema.number().default(1500).description('回复延迟随机抖动上限(ms)'),
+  replyDelayMaxMs: Schema.number().default(8000).description('回复延迟单次上限(ms)，0=不封顶'),
   sessionIdleTimeout: Schema.number().default(30 * 60 * 1000).description('会话闲置超时(ms)'),
   maxQueue: Schema.number().default(20).description('并发队列最大长度'),
   processingTimeoutMs: Schema.number().default(30 * 60 * 1000).description('处理超时(ms)，超时中断当前 LLM 调用'),

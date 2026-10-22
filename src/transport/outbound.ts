@@ -8,6 +8,8 @@ import type { SessionManager, SessionRecord } from '../session/index.ts';
 import type { ImQQBotConfig } from '../config.ts';
 import type { Logger } from '../types.ts';
 import { chunkMarkdownText } from './chunker.ts';
+import { computeReplyDelay, sleep } from './reply-delay.ts';
+import { isSkipReply } from '../shared/skip-marker.ts';
 import { OutboundBuffer, type QQBotSender } from './outbound-buffer.ts';
 import { formatToolResult, type ToolsRegistryLike, type ToolResultData } from './tool-presenter.ts';
 import {
@@ -147,7 +149,22 @@ class OutboundRouter {
   private appendChunk(sessionId: string, record: SessionRecord, text: string): void {
     let buffer = this.buffers.get(sessionId);
     if (buffer === undefined) {
-      buffer = new OutboundBuffer(record, this.bot, this.config.textChunkLimit, this.logger, this.shouldStream(record));
+      buffer = new OutboundBuffer(
+        record,
+        this.bot,
+        this.config.textChunkLimit,
+        this.logger,
+        this.shouldStream(record),
+        // 静态发送前走拟人延迟；返回 false 表示跳过
+        async (body: string) => {
+          if (isSkipReply(body)) {
+            this.logger.info('im-qqbot: reply skipped by model (silence marker)');
+            return false;
+          }
+          await this.delayBeforeSend(body);
+          return true;
+        },
+      );
       this.buffers.set(sessionId, buffer);
     }
     buffer.append(text);
@@ -175,6 +192,13 @@ class OutboundRouter {
     }
     const fullText = textParts.join('\n');
     if (!fullText.trim()) return;
+
+    // 沉默标记：AI 判定此刻不该接话 → 不发送
+    if (isSkipReply(fullText)) {
+      this.logger.info('im-qqbot: reply skipped by model (silence marker)');
+      this.buffers.delete(sessionId);
+      return;
+    }
 
     void this.send(record, fullText, 'sendMarkdown');
     this.buffers.delete(sessionId);
@@ -226,8 +250,9 @@ class OutboundRouter {
     this.logger.debug(`im-qqbot: turn/end sessionId=${sessionId}`);
   }
 
-  /** 统一发送：切分 + 逐 chunk 发送 + 错误记录 */
+  /** 统一发送：拟人延迟 → 切分 + 逐 chunk 发送 + 错误记录 */
   private async send(record: SessionRecord, text: string, tag: string): Promise<void> {
+    await this.delayBeforeSend(text);
     const chunks = chunkMarkdownText(text, this.config.textChunkLimit);
     for (const chunk of chunks) {
       try {
@@ -236,6 +261,24 @@ class OutboundRouter {
         this.logger.error(`im-qqbot: ${tag} failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+  }
+
+  /**
+   * 发送前的拟人延迟。
+   *
+   * 真人在群里打字要时间；秒回是最明显的机器人特征。
+   * 延迟按「基础 + 每字 + 随机抖动」计算，上限由配置封顶。
+   */
+  private async delayBeforeSend(text: string): Promise<void> {
+    const ms = computeReplyDelay(text, {
+      baseMs: this.config.replyDelayMs,
+      perCharMs: this.config.replyDelayPerCharMs,
+      jitterMs: this.config.replyDelayJitterMs,
+      maxMs: this.config.replyDelayMaxMs,
+    });
+    if (ms <= 0) return;
+    this.logger.debug(`im-qqbot: reply delay ${ms}ms`);
+    await sleep(ms);
   }
 }
 
