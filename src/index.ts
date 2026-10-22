@@ -73,7 +73,7 @@ async function startPlugin(
         // 注意：不写入 process.env——resolveEnv 的 env 回退属于用户显式
         // export 的配置语义，运行时写入会与解绑清理不对齐（解绑后 HMR
         // 重载的新 fiber 仍从 env 读到旧凭据，状态停留 bound）
-        const persisted = persistCredentialsToProfile(credentials, getProfileDir() ?? undefined, logger);
+        const persisted = persistCredentialsToProfile(credentials, getProfileDir(ctx) ?? undefined, logger);
         if (persisted) {
           // 写入 cordis.patch.yml 会触发 dsh 热更新，自动重新加载本插件。
           logger.info('配置已保存，等待热更新重新加载...');

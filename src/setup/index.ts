@@ -83,6 +83,8 @@ export async function ensureCredentials(
   // cordis 访问守卫要求服务经 inject 声明后方可访问；deps 未就绪时
   // 回调不运行但插件照常加载（CLI profile），服务就绪/替换时回调
   // 重跑（自动清理旧路由、注册新路由），与 webserver 的注入生命周期对齐。
+  // profile 目录解析一次注入（同 registerBoundCredentialRoutes 的理由）
+  const pendingProfileDir = getProfileDir(ctx) ?? undefined;
   (ctx as unknown as {
     inject(deps: readonly string[], callback: (scoped: Context) => void): unknown;
   }).inject(['webServer'], (scoped) => {
@@ -92,9 +94,10 @@ export async function ensureCredentials(
       // 未绑定流程中的手动提交：终止扫码轮询，走同一持久化路径
       onManualCredentials: (credentials) => {
         service.dispose();
-        return persistCredentials(credentials, logger);
+        return persistCredentials(credentials, logger, pendingProfileDir);
       },
       currentConfig: () => options.config,
+      profileDir: pendingProfileDir,
     });
     // 回调作用域（服务卸载/替换、插件卸载）连带注销路由
     (scoped as unknown as { effect(fn: () => () => void, name?: string): void }).effect(() => {
@@ -112,6 +115,10 @@ export async function ensureCredentials(
  * 保存后触发 HMR 重载、新 fiber 以新凭据重启网关。
  */
 export function registerBoundCredentialRoutes(ctx: Context, logger: Logger, appId: string, config: Record<string, unknown>): void {
+  // profile 目录在此解析一次并注入路由层：路由层拿不到 ctx，不能自己猜路径
+  // （link / 源码安装时插件真实路径里没有 node_modules，路径上推必然失败，
+  //   设置页一保存就报「无法定位 profile 目录」）
+  const profileDir = getProfileDir(ctx) ?? undefined;
   (ctx as unknown as {
     inject(deps: readonly string[], callback: (scoped: Context) => void): unknown;
   }).inject(['webServer'], (scoped) => {
@@ -119,8 +126,9 @@ export function registerBoundCredentialRoutes(ctx: Context, logger: Logger, appI
     if (webServer === undefined || typeof webServer.register !== 'function') return;
     const disposeRoutes = registerBindRoutes(webServer, null, logger, {
       boundAppId: () => appId,
-      onManualCredentials: (credentials) => persistCredentials(credentials, logger),
+      onManualCredentials: (credentials) => persistCredentials(credentials, logger, profileDir),
       currentConfig: () => config,
+      profileDir,
     });
     (scoped as unknown as { effect(fn: () => () => void, name?: string): void }).effect(() => {
       return disposeRoutes;
@@ -129,8 +137,12 @@ export function registerBoundCredentialRoutes(ctx: Context, logger: Logger, appI
 }
 
 /** 手动凭据持久化（失败时返回可展示的错误） */
-function persistCredentials(credentials: SetupCredentials, logger: Logger): { persisted: boolean; error?: string } {
-  const persisted = persistCredentialsToProfile(credentials, getProfileDir() ?? undefined, logger);
+function persistCredentials(
+  credentials: SetupCredentials,
+  logger: Logger,
+  profileDir?: string,
+): { persisted: boolean; error?: string } {
+  const persisted = persistCredentialsToProfile(credentials, profileDir, logger);
   return persisted
     ? { persisted: true }
     : { persisted: false, error: '无法定位 profile 目录或写入失败，请改用环境变量配置' };

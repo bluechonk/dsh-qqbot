@@ -35,19 +35,51 @@ export function buildUserAgent(): string {
 }
 
 /**
- * 从插件安装路径推导 profile 目录
+ * 定位当前 profile 目录
  *
- * 主策略：逐级向上探测 profile 标志文件（cordis.patch.yml / pnpm-workspace.yaml）。
- * Desktop profile 使用 pnpm workspace 布局（profiles/desktop/dependencies/
- * node_modules/.pnpm/<pkg>/node_modules/...），插件嵌套于多级 node_modules，
- * 仅按 node_modules 匹配会命中内层目录而返回错误位置。
+ * 探测顺序（先可靠、后启发）：
+ *   1. 宿主提供的 `profileContext.dir` —— **首选**。它是宿主自己持有的
+ *      profile 事实来源，线上安装、pnpm workspace、`link:` 源码安装都能拿到。
+ *   2. 环境变量 `DSH_PROFILE_DIR`
+ *   3. 从插件路径逐级上推（兼容拿不到 ctx 的旧宿主）
  *
- * 兜底：无标志文件时沿用旧启发式（名为 node_modules 的目录的父目录），
- * 覆盖 CLI profile 的浅层 npm 布局与未写入过 patch 的全新 profile。
+ * ⚠️ 为什么必须优先用 profileContext：
+ *   用 `link:` / 源码路径安装时，插件的真实路径里**没有 `node_modules`**，
+ *   「跨过 node_modules 边界后探测标志文件」的策略必然返回 null，
+ *   于是设置页一保存就报「无法定位 profile 目录」。
  *
- * @param baseDir - 起始目录，缺省为插件根（可注入便于测试）
+ * @param ctx - cordis Context（可注入便于测试）；缺省时退化为路径上推
+ * @param baseDir - 路径上推的起点，缺省为插件根
  */
-export function getProfileDir(baseDir: string = PLUGIN_ROOT): string | null {
+export function getProfileDir(ctx?: ProfileContextSource, baseDir: string = PLUGIN_ROOT): string | null {
+  const fromHost = readProfileContextDir(ctx);
+  if (fromHost !== null) return fromHost;
+
+  const fromEnv = (process.env.DSH_PROFILE_DIR ?? '').trim();
+  if (fromEnv && existsSync(fromEnv)) return fromEnv;
+
+  return resolveByAncestor(baseDir);
+}
+
+/** 能提供 profileContext 的最小 ctx 形状（避免硬依赖 cordis 类型） */
+export interface ProfileContextSource {
+  get?(name: string): unknown;
+}
+
+/** 读取宿主 profileContext 的目录字段 */
+function readProfileContextDir(ctx?: ProfileContextSource): string | null {
+  if (ctx?.get === undefined) return null;
+  try {
+    const profile = ctx.get('profileContext') as { dir?: unknown } | undefined;
+    const dir = typeof profile?.dir === 'string' ? profile.dir.trim() : '';
+    return dir && existsSync(dir) ? dir : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 路径上推策略（旧行为，保留给拿不到 ctx 的场景） */
+function resolveByAncestor(baseDir: string): string | null {
   // 主策略：跨过 node_modules 边界后，优先命中 cordis.patch.yml（凭据写入
   // 目标），其次 pnpm-workspace.yaml。跨越守卫是关键——插件包自身随包携带
   // cordis.patch.yml（dsh.bundle.patch 分发物）、源码 checkout 根也有同名

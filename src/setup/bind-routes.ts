@@ -85,10 +85,29 @@ export interface BindRoutesOptions {
    * 配置写入处理（默认：最小合并写入 profile patch）。
    */
   onUpdateConfig?: (config: Record<string, unknown>) => boolean;
+  /**
+   * profile 目录（由插件入口用宿主 profileContext 解析后注入）。
+   *
+   * 路由层**不该自己猜路径**：`link:` / 源码安装时插件真实路径里没有
+   * `node_modules`，路径上推必然失败，设置页一保存就报「无法定位 profile 目录」。
+   * 拿不到时（旧宿主）退化为 undefined，由 persist 层按旧策略处理。
+   */
+  profileDir?: string | null;
 }
 
-/** 可经 UI 编辑的配置键（白名单：只收用户必要的字段，其余走 patch/env） */
-const EDITABLE_CONFIG_KEYS = new Set([
+/**
+ * 解析写入目标 profile 目录。
+ *
+ * 优先用调用方注入的 `options.profileDir`（插件入口已用宿主 profileContext
+ * 解析好，link / 源码安装同样可用）；没有注入时才退化为路径上推。
+ */
+function profileDirOf(options: BindRoutesOptions): string | undefined {
+  const injected = options.profileDir;
+  if (injected !== undefined && injected !== null) return injected;
+  return getProfileDir() ?? undefined;
+}
+
+/** 可经 UI 编辑的配置键（白名单：只收用户必要的字段，其余走 patch/env） */const EDITABLE_CONFIG_KEYS = new Set([
   'requireMention', 'streaming', 'showToolResults', 'debug',
   'provider', 'model', 'preset',
   'groupPrompt', 'directPrompt',
@@ -155,8 +174,16 @@ export function registerBindRoutes(
   logger: Logger,
   options: BindRoutesOptions = {},
 ): () => void {
+  /**
+   * 解析写入目标 profile 目录。
+   *
+   * 优先用调用方注入的 `options.profileDir`（插件入口已用宿主 profileContext
+   * 解析好，link / 源码安装同样可用）；没有注入时才退化为路径上推。
+   */
+  const resolveProfileDir = (): string | undefined => profileDirOf(options);
+
   const defaultManual = (credentials: SetupCredentials): ManualSubmitResult => {
-    const persisted = persistCredentialsToProfile(credentials, getProfileDir() ?? undefined, logger);
+    const persisted = persistCredentialsToProfile(credentials, resolveProfileDir(), logger);
     return persisted ? { persisted: true } : { persisted: false, error: '无法定位 profile 目录或写入失败，请改用环境变量配置' };
   };
   const handleManualSubmit = options.onManualCredentials ?? defaultManual;
@@ -333,7 +360,7 @@ function handleUnbind(req: IncomingMessage, res: ServerResponse, options: BindRo
   }
   const result: UnbindResult = options.onUnbind === undefined
     ? (() => {
-        const removed = removeCredentialsFromProfile(getProfileDir() ?? undefined, undefined);
+        const removed = removeCredentialsFromProfile(profileDirOf(options), undefined);
         if (removed) {
           // 清除进程内凭据：扫码绑定成功时会写入 env（供热更新后的下次
           // apply 兜底读取）；不清则 HMR 重载后新 fiber 仍从 env 读到
@@ -417,7 +444,7 @@ async function handleConfig(req: IncomingMessage, res: ServerResponse, options: 
   }
 
   const persisted = options.onUpdateConfig === undefined
-    ? updateProfileConfig(validated, getProfileDir() ?? undefined, undefined)
+    ? updateProfileConfig(validated, profileDirOf(options), undefined)
     : options.onUpdateConfig(validated);
   if (!persisted) {
     sendJson(res, 500, { ok: false, error: '无法定位 profile 目录或写入失败' });
