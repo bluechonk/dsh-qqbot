@@ -96,6 +96,11 @@ export function proactiveGate(options: ProactiveGateOptions) {
 
       if (mentionedSelf) {
         state.proactive = { mode: 'mentioned' };
+        // 回写 SDK 的 mention 状态：下游（入站 isEmptyMessage / buildUserMessage）
+        // 读的是 state.mention.wasMentioned，而 SDK 在 requireMention=false 时
+        // 把它算成 false（它按"是否需要 @ 才回"的口径，不是"是否真的 @ 了"）。
+        // 不回写的话，@ 她时 content 被 sanitizer 剥光 → 入站判为空消息 → 整条丢掉。
+        state.mention = { ...(state.mention ?? {}), wasMentioned: true };
         observer.log({
           gid: groupId,
           decision: 'mentioned',
