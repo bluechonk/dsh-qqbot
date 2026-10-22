@@ -14,6 +14,7 @@
       "default": "./lib/client.js"
     }
   },
+  "packageManager": "pnpm@11.28.5",
   "scripts": {
     "build": "tsc && tsdown --config tsdown.client.config.ts",
     "build:client": "tsdown --config tsdown.client.config.ts",

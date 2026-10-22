@@ -14,13 +14,19 @@ jobs:
         node-version: [ 22.x, 24.x ]
     steps:
       - uses: actions/checkout@v4
+      # ubuntu-latest 不自带 pnpm：必须先装，版本取自 package.json 的 packageManager 字段
+      - uses: pnpm/action-setup@v4
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Type check & build
+      - name: Build
         run: pnpm build
+      # 主 tsconfig 排除了 src/client，浏览器半的类型错误只有这一步能兜住
+      - name: Type check (client)
+        run: pnpm typecheck:client
       - name: Unit tests
         run: pnpm test
