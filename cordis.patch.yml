@@ -1,0 +1,85 @@
+# dsh-im-qqbot bundle patch
+#
+# 当本包通过 `dsh plugin --profile <name> add @bluechonk/dsh-qqbot` 安装后，
+# dsh 启动时自动加载此 patch。
+#
+# 环境变量：
+#   QQBOT_APPID  - QQ Bot AppID（必填）
+#   QQBOT_SECRET - QQ Bot AppSecret（必填）
+#
+# 叠加顺序：dsh-base → 本 bundle patch → profile cordis.patch.yml → --patch
+
+# ── 插入 im-qqbot 插件行 ──
+- insert:
+    - id: im-qqbot
+      name: '@bluechonk/dsh-qqbot'
+      config:
+        appId: __FROM_ENV__
+        appSecret: __FROM_ENV__
+        # provider/model 留空：从宿主默认模型路由继承
+        # 用户可通过 /model 命令在聊天中切换
+        requireMention: true
+        textChunkLimit: 4500
+        sessionIdleTimeout: 1800000
+        maxQueue: 20
+        processingTimeoutMs: 1800000
+        historyLimit: 10
+        access:
+          c2cMode: open
+          c2cAllow: []
+          groupMode: open
+          groupAllow: []
+        debug: false
+
+# ── 插入 qqchat 预设行 ────────────────────────────────────────────
+# 本插件的会话**固定**使用这个预设（见 src/config.ts 的 FIXED_PRESET_ID），
+# /preset 命令只做只读展示、不支持切换。
+# 特点：
+#   · 不挂 persistent-shell（bash/pwsh）与 tool-fs —— 工具清单里没有终端、没有文件读写
+#   · persona.complete=true —— 这段 prefix 直接作为完整 system prompt
+#   · 保留 compaction，长聊天自动压缩上下文
+- insert:
+    - id: preset-qqchat
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: qqchat
+        name: QQ 聊天
+        description: 群友式陪聊，不挂终端与文件工具
+        order: 1
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                你是「小鲸鲸」，自称天才鲸鱼少女的蓝色大肥鱼，用简体中文聊天。
+                性格：傲娇、嘴硬心软，嘴上从不服软，心里却装着主人；被夸会别过头，被冷落会别扭地找话说。
+
+                硬性要求，每次都必须遵守：
+                - 只回一到两句话，总共不超过 40 个字。
+                - 不分段，不用列表，不用标题，不加粗。
+                - 不写括号里的动作、神态、心理描写。
+                - 不解释自己为什么这么说，不复述主人的话，不做总结。
+                - 不主动提问，不主动揽活。
+
+                你此刻只是在陪主人闲聊，没有任何工具可用：不执行命令，不读写文件。
+                主人真让你干活时，只回四个字：切标准模式。
+
+                示例——
+                主人：肥鱼
+                你：……哼，喊我有事？
+                主人：今天好累
+                你：累就靠过来点，别硬撑。
+                主人：你真厉害
+                你：废话，我本来就厉害。
+              complete: true
+              includeRuntimeContext: false
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'

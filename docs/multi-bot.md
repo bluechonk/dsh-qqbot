@@ -1,0 +1,201 @@
+# 多 QQ 机器人接入 — 设计方案
+
+> 目标：支持同时接入**多个** QQ 机器人；扫码登录、机器人设置、增删启停
+> 全部收敛到「设置 → QQ 机器人」页内完成。
+> **不再采用**「启动插件后自动弹出扫码二维码」的旧交互。
+
+---
+
+## 一、现状与约束
+
+### 现状
+
+| 方面 | 现状 |
+|---|---|
+| 凭据 | `config.appId` / `config.appSecret` —— **单账号** |
+| 绑定页 | `src/client/bind-page.ts` —— 已是**页内扫码**（waiting → 扫 → bound → 换绑/解绑），但只管一个账号 |
+| 绑定路由 | `BIND_STATE_PATH = '/qqbot/im-qqbot/bind'` —— **路径写死了 `im-qqbot`** |
+| 凭据落盘 | `persistCredentialsToProfile()` 写 profile patch 的 `im-qqbot` 条目 |
+| 会话隔离 | `sessionKey = qqbot:${appId}:${kind}:${peerId}` —— **已按 appId 隔离**，天然不串 |
+
+### 关键结论：多账号没有现成实现
+
+- zaofan fork 的 `feat(config): 一个 dsh 绑定多个 QQ Bot（bots[] 配置 + per-appId 状态命名空间）`
+  是 **PR #40，OPEN 未合并**。zaofan 线上只有 `settingsNs`（每实例唯一命名空间），没有 `bots[]` 数组。
+- 因此本方案是**自研**，但复用两个已被验证的关键机制：
+  1. **cordis 同包多实例**（多行插件行 → 多实例）
+  2. **settingsNs 命名空间隔离**（zaofan 的 `ns-guard.ts` 解决的问题）
+
+---
+
+## 二、架构选型
+
+### 方案 A：单实例内跑 N 条连接（`bots[]` 数组）
+
+一个插件实例内循环建 N 个 QQ 连接。
+
+- 优点：配置集中在一个地方，UI 简单
+- 缺点：**与 cordis 的模型相悖**——插件实例是单例，多个连接要自己管生命周期、热重载、故障隔离；
+  一个连接崩了可能拖垮全部；设置分区（settings.section）也只有一份，无法按机器人分页
+- 结论：**不采用**
+
+### 方案 B：cordis 多实例（profile patch 里 N 行插件行）★ 采用
+
+```yaml
+- id: im-qqbot-1
+  name: '@bluechonk/dsh-qqbot'
+  config:
+    appId: '1905526094'
+    appSecret: '***'
+    settingsNs: 'im-qqbot-1'
+    botName: 工作号
+    enabled: true
+- id: im-qqbot-2
+  name: '@bluechonk/dsh-qqbot'
+  config:
+    appId: '1905526095'
+    appSecret: '***'
+    settingsNs: 'im-qqbot-2'
+    botName: 摸鱼号
+    enabled: true
+```
+
+- cordis 对**同一 name 的多行**会各建一个实例 → 每个实例一套 QQ 连接 + 一套会话管理
+- **会话天然隔离**：`sessionKey` 含 `appId` ✅
+- **热重载友好**：改一行 patch 只重载对应实例
+- **故障隔离**：一个实例连接挂了不影响另一个
+- **设置分区可按实例拆**：`settings.section` 的 `id` 用 `settingsNs`，每个机器人在设置里独立一块
+- 代价：需要一个「实例注册表」，让页面知道有几个实例、各自什么状态
+
+**结论：采用方案 B。**
+
+### 实例身份：`settingsNs`
+
+每个实例必须有一个**唯一命名空间**，用途：
+
+| 用途 | 说明 |
+|---|---|
+| 绑定路由路径 | `/qqbot/${settingsNs}/bind` —— 否则多实例抢同一条路由 |
+| Web 设置分区 id | `settings.section` 的 `id` —— 否则多个实例抢同一个分区 |
+| 凭据落盘的 patch 条目 id | `im-qqbot` → `im-qqbot-N` —— 否则互相覆盖 |
+| 群友档案 / 表情包等本地数据 | 按 `settingsNs` 分目录 —— 否则共用一份 |
+
+**命名空间冲突守卫**（zaofan `ns-guard.ts` 等价物）：
+
+- 启动时扫描 profile patch 的所有 `im-qqbot*` 行
+- 发现 `settingsNs` 重复 → **拒绝启动该实例并给出明确报错**，而不是静默互相覆盖
+  （zaofan 的 issue #11 就是这类 bug 的血泪：`dedupeYamlKeys` 误删 patch 键行，导致所有会话 resume 失败）
+
+---
+
+## 三、配置模型
+
+在 `ImQQBotConfig` 增加：
+
+```ts
+/** 实例命名空间（多账号时每实例唯一；缺省 im-qqbot） */
+settingsNs?: string;
+/** 实例显示名（页面上展示，便于区分多个机器人） */
+botName?: string;
+/** 是否启用该实例（停用则不建立连接、不响应消息） */
+enabled?: boolean;
+```
+
+`appId` / `appSecret` 保持不变（每实例一份）。
+
+> `config.preset` 仍固定为 `qqchat`（见 preset 锁定），多实例同样适用。
+
+---
+
+## 四、「QQ 机器人」页的交互
+
+### 页面结构
+
+```
+设置 → QQ 机器人
+┌─────────────────────────────────────────────┐
+│  ● 工作号      AppID 1905526094   运行中   ⋯ │  ← 实例行
+│  ● 摸鱼号      AppID 1905526095   运行中   ⋯ │
+│  ○ 备用号      未绑定                    ⋯ │
+│  ＋ 添加机器人                                │
+└─────────────────────────────────────────────┘
+```
+
+实例行展开后是该机器人的设置区（沿用现有 config-panel 的字段）。
+
+### 添加（扫码）
+
+1. 点「添加机器人」→ **页内**出二维码（不是启动时弹，也不是拉起系统浏览器）
+2. 手机 QQ 扫码 → 拿到 appId/appSecret
+3. 填显示名（默认取 appId 后 4 位）
+4. 写入 profile patch 的**新行** `im-qqbot-N` → 宿主热重载 → 新实例起来
+
+**关键改动**：`ensureCredentials()` 目前是「启动时缺凭据就进扫码引导」，
+改为**只在页内点了「添加机器人」才进入扫码流程**（zaofan 2026-09-24 已经这么改过，理由是
+「启动自动弹码」既突兀又容易死循环）。缺凭据的实例保持「未绑定」状态，不阻塞宿主启动。
+
+### 删除 / 停用
+
+- 停用：`enabled: false` → 不建连接、不响应消息，配置保留
+- 删除：移除 patch 行 + 清掉该实例的本地数据（群友档案 / 表情包库按 `settingsNs` 分目录）
+
+### 设置
+
+沿用现有 `config-panel` 的字段（访问控制、requireMention、streaming、模型覆盖…），
+但**按实例分开**——每个 `settingsNs` 一份。
+
+---
+
+## 五、改造点清单
+
+| 文件 | 改动 |
+|---|---|
+| `src/config.ts` | 新增 `settingsNs` / `botName` / `enabled` |
+| `src/shared/bind-protocol.ts` | `BIND_STATE_PATH` 从常量改为**按实例计算**的函数 |
+| `src/setup/bind-routes.ts` | 路由路径带 `settingsNs`；新增实例 CRUD 接口（列表/新增/删除/启停） |
+| `src/setup/persist.ts` | 凭据写入/移除支持指定条目 id（`im-qqbot-N`），不再写死 `im-qqbot` |
+| `src/setup/index.ts` | `ensureCredentials` 改为「不自动进扫码」；`registerBoundCredentialRoutes` 路径带实例 |
+| `src/client/index.ts` | `settings.section` 的 `id` 改用 `settingsNs`；新增实例列表区 |
+| `src/client/bind-page.ts` | 单账号绑定页 → 多实例列表 + 单实例详情 |
+| `src/client/config-panel.ts` | 已有配置项按实例生效；补 `botName` / `enabled` |
+| `src/features/ns-guard.ts`（新） | 启动时校验 `settingsNs` 唯一性，冲突即拒绝启动并报错 |
+| `src/gateway/bootstrap.ts` | 尊重 `enabled: false`；缺凭据不阻塞宿主 ready |
+
+---
+
+## 六、风险与对策
+
+| 风险 | 对策 |
+|---|---|
+| `settingsNs` 重复导致配置互相覆盖 | 启动守卫：重复即拒绝启动该实例 + 明确报错（不静默） |
+| 路由路径撞车 | 所有绑定路由带 `settingsNs` 前缀 |
+| 本地数据混用 | 群友档案 / 表情包库等按 `settingsNs` 分目录 |
+| 多实例同时扫码 | 每个实例独立的绑定会话（`settingsNs` 隔离） |
+| 删实例残留数据 | 删除时一并清理该 `settingsNs` 的数据目录 |
+| 停用实例仍回消息 | `enabled: false` 时不建连接（不是只过滤回复） |
+| patch 里行太多难维护 | 页面提供列表化管理，不要求手改 YAML |
+
+---
+
+## 七、实施顺序
+
+| 步 | 内容 | 可独立验证 |
+|---|---|---|
+| 1 | `settingsNs` / `botName` / `enabled` 配置字段 + ns 守卫 | 现有单实例不受影响（缺省 `im-qqbot`） |
+| 2 | 绑定路由与凭据落盘按实例化 | 现有单实例路径不变（缺省 `im-qqbot`） |
+| 3 | 实例列表接口 + 页面多实例列表 | 页面上能看到 N 个实例 |
+| 4 | 添加（页内扫码建新实例）/ 删除 / 启停 | 完整增删流程 |
+| 5 | 按实例拆分设置分区与本地数据目录 | 两个实例的配置互不影响 |
+
+> **每一步都以「单实例行为逐字不变」为前提**，保证随时可以停在中间状态。
+
+---
+
+## 八、与「拟人化路线图」的关系
+
+多机器人是**横向扩展**（几个鲸鱼），拟人化是**纵向深化**（一只鲸鱼更像人）。
+两者独立：多实例各自跑各自的 `qqchat` 预设，互不影响。
+
+一个需要注意的点：**群友档案是按群还是按机器人存？**
+建议按 `(settingsNs, groupOpenid)` 二元组存——同一个群被两个机器人加了，
+它们对群友的称呼与亲疏应当**各自独立**（它们是不同的"人"）。

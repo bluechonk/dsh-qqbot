@@ -1,0 +1,15 @@
+node_modules/
+dist/
+lib/
+.tmp/
+*.log
+.DS_Store
+
+# 过程文件（计划与进度记录，不入库）
+.planning/
+.zcode/
+
+.env
+.dsh-sessions/
+*.tsbuildinfo
+cordis.dev.yml
