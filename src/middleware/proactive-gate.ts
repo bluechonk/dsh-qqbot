@@ -55,6 +55,7 @@ export function proactiveGate(options: ProactiveGateOptions) {
         content?: string;
         groupOpenid?: string;
         mentions?: MentionEntry[];
+        rawEventType?: string;
       };
       // 私聊不受门控影响
       if (msg.kind !== 'group') {
@@ -65,10 +66,13 @@ export function proactiveGate(options: ProactiveGateOptions) {
       const state = ctx.state as { mention?: MentionState; proactive?: ProactiveDecision };
       const wasMentioned = state.mention?.wasMentioned === true;
       const groupId = msg.groupOpenid ?? '';
+      // 诊断用：@ 判定依赖这三者，出问题时日志里直接能看到
+      const rawEventType = msg.rawEventType;
 
       // 被 @ → 必回
       if (wasMentioned) {
         state.proactive = { mode: 'mentioned' };
+        observer.log({ gid: groupId, decision: 'mentioned', rawEventType, mentionState: state.mention });
         await next();
         return;
       }
@@ -102,6 +106,8 @@ export function proactiveGate(options: ProactiveGateOptions) {
         hourlyUsed,
         hourlyFull,
         chars: text.length,
+        rawEventType,
+        mentionState: state.mention,
       });
 
       if (!worth) {

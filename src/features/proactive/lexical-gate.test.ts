@@ -34,6 +34,27 @@ describe('evaluateLexical', () => {
     expect(v?.reason).toContain('too-short');
   });
 
+  it('喊名字优先于长度检查：短到 3 个字也必须放行', () => {
+    // 「大肥鱼」正是最容易因为太短被吞掉的场景
+    for (const name of ['大肥鱼', '肥鱼', '鲸鱼', '小鲸鲸']) {
+      const v = evaluateLexical({ text: name, mentioned: false, mentionedOthers: false }, OPTS);
+      expect(v?.worth, name).toBe(true);
+      expect(v?.reason, name).toBe('self-name');
+      expect(v!.score, name).toBeGreaterThanOrEqual(OPTS.minScore);
+    }
+  });
+
+  it('喊名字即使夹在噪声词里也放行', () => {
+    const v = evaluateLexical({ text: '哈哈哈大肥鱼', mentioned: false, mentionedOthers: false }, OPTS);
+    expect(v?.worth).toBe(true);
+    expect(v?.reason).toBe('self-name');
+  });
+
+  it('喊名字即使 @ 了别人也放行（在叫她本人）', () => {
+    const v = evaluateLexical({ text: '肥鱼你看', mentioned: false, mentionedOthers: true }, OPTS);
+    expect(v?.worth).toBe(true);
+  });
+
   it('纯表情/符号不值得', () => {
     const v = evaluateLexical({ text: '！！！？？？', mentioned: false, mentionedOthers: false }, OPTS);
     expect(v?.worth).toBe(false);

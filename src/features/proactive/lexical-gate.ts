@@ -37,7 +37,12 @@ const NOISE_WORDS = [
   '收到', '路过', '围观', '233', 'awsl', '2333', '好耶', '牛',
 ];
 
-/** 提到本鲸（虽然没 @，但明显在跟它说话） */
+/**
+ * 提到本鲸（虽然没 @，但明显在跟它说话）
+ *
+ * 喊名字是最强的"在叫她"信号，必须**先于长度检查**判定：
+ * 「大肥鱼」「肥鱼」只有 2~3 个字，若先按 minLength 拦，喊她名字也听不见。
+ */
 const SELF_NAMES = ['肥鱼', '鲸鱼', '大肥鱼', '小鲸鲸', '蓝鲸'];
 
 /** 基础分：没有明显特征时保持在中位，交给门槛决定去留 */
@@ -48,7 +53,7 @@ const W = {
   question: 0.18,
   help: 0.14,
   opening: 0.1,
-  selfName: 0.12,
+  selfName: 0.3,
   noise: -0.22,
   mentionOthers: -0.15,
   longText: -0.05,
@@ -98,6 +103,14 @@ export function evaluateLexical(
   const text = candidate.text.trim();
 
   if (!text) return { score: 0, worth: false, reason: 'empty' };
+
+  // ⚠️ 喊名字必须优先于长度检查：「大肥鱼」只有 3 个字，
+  // 先按 minLength 拦掉就变成"叫她她也不应"，这是最不能忍的失败模式。
+  if (SELF_NAMES.some((w) => text.includes(w))) {
+    const score = Math.min(1, BASE_SCORE + W.selfName);
+    return { score, worth: score >= options.minScore, reason: 'self-name' };
+  }
+
   if (text.length < options.minLength) {
     return { score: 0, worth: false, reason: `too-short(${text.length})` };
   }
@@ -117,10 +130,6 @@ export function evaluateLexical(
   if (OPENING_WORDS.some((w) => text.includes(w))) {
     score += W.opening;
     reasons.push('opening');
-  }
-  if (SELF_NAMES.some((w) => text.includes(w))) {
-    score += W.selfName;
-    reasons.push('self-name');
   }
   if (NOISE_WORDS.some((w) => text.includes(w))) {
     score += W.noise;
