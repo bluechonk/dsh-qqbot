@@ -15,6 +15,9 @@
 > 本仓库基于 [tencent-connect/dsh-qqbot](https://github.com/tencent-connect/dsh-qqbot)（MIT）改造，
 > 去除了上游的提交历史，包名与代码归属已完全独立。上游版本请见
 > [tencent-connect/dsh-qqbot](https://github.com/tencent-connect/dsh-qqbot)。
+>
+> 许可：本仓库沿用上游的 MIT 许可，[LICENSE](./LICENSE) 同时保留
+> Tencent Connect（原作者）与 bluechonk（改造者）的版权声明。
 
 扫码加入 QQ 群 / 频道
 
