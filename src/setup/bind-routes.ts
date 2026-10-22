@@ -93,6 +93,7 @@ const EDITABLE_CONFIG_KEYS = new Set([
   'provider', 'model', 'preset',
   'groupPrompt', 'directPrompt',
   'access', 'proactive',
+  'replyDelayMs', 'replyDelayPerCharMs', 'replyDelayJitterMs', 'replyDelayMaxMs',
 ]);
 
 /** 白名单键的子 Schema（服务端校验：客户端校验仅为体验，安全边界在宿主） */
@@ -108,11 +109,24 @@ const EDITABLE_CONFIG_SCHEMAS: Record<string, (value: unknown) => unknown> = {
   directPrompt: stringSchema('directPrompt'),
   access: (v) => AccessControlSchema(v as never),
   proactive: (v) => ProactiveSchema(v as never),
+  replyDelayMs: numberSchema('replyDelayMs', 0, 60000),
+  replyDelayPerCharMs: numberSchema('replyDelayPerCharMs', 0, 1000),
+  replyDelayJitterMs: numberSchema('replyDelayJitterMs', 0, 60000),
+  replyDelayMaxMs: numberSchema('replyDelayMaxMs', 0, 300000),
 };
 
 function booleanSchema(value: unknown, name: string): boolean {
   if (typeof value !== 'boolean') throw new TypeError(`${name} 必须是布尔值`);
   return value;
+}
+
+/** 数字字段校验（限定区间，避免面板写进离谱值把机器人聊瘫） */
+function numberSchema(name: string, min: number, max: number): (value: unknown) => unknown {
+  return (value) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${name} 必须是数字`);
+    if (value < min || value > max) throw new TypeError(`${name} 必须在 ${min}~${max} 之间`);
+    return value;
+  };
 }
 
 function stringSchema(name: string): (value: unknown) => unknown {

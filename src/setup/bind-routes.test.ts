@@ -400,6 +400,68 @@ describe('bind-routes', () => {
     expect(json(res)).toMatchObject({ ok: false, error: expect.stringContaining('布尔') });
   });
 
+  it('POST config：4 个回复延迟字段在白名单内可写入', async () => {
+    const { routes } = createHarness({ onUpdateConfig: () => true });
+    const res = fakeRes();
+    await invoke(
+      routes.get(BIND_CONFIG_PATH),
+      fakeReq('POST', { host: '127.0.0.1:3080' },
+        '{"replyDelayMs":2000,"replyDelayPerCharMs":100,"replyDelayJitterMs":800,"replyDelayMaxMs":10000}'),
+      res,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(json(res)).toMatchObject({ ok: true });
+  });
+
+  it('POST config：延迟字段越界被 Schema 拒绝', async () => {
+    const { routes } = createHarness({ onUpdateConfig: () => true });
+    const res = fakeRes();
+    await invoke(
+      routes.get(BIND_CONFIG_PATH),
+      fakeReq('POST', { host: '127.0.0.1:3080' }, '{"replyDelayMs":-1}'),
+      res,
+    );
+    expect(res.statusCode).toBe(400);
+    expect(json(res)).toMatchObject({ ok: false, error: expect.stringContaining('replyDelayMs') });
+  });
+
+  it('POST config：延迟字段类型错误被拒绝', async () => {
+    const { routes } = createHarness({ onUpdateConfig: () => true });
+    const res = fakeRes();
+    await invoke(
+      routes.get(BIND_CONFIG_PATH),
+      fakeReq('POST', { host: '127.0.0.1:3080' }, '{"replyDelayPerCharMs":"快一点"}'),
+      res,
+    );
+    expect(res.statusCode).toBe(400);
+    expect(json(res)).toMatchObject({ ok: false, error: expect.stringContaining('数字') });
+  });
+
+  it('POST config：proactive 整块可写入（设置面板的自主接话开关）', async () => {
+    const { routes } = createHarness({ onUpdateConfig: () => true });
+    const res = fakeRes();
+    await invoke(
+      routes.get(BIND_CONFIG_PATH),
+      fakeReq('POST', { host: '127.0.0.1:3080' },
+        '{"proactive":{"enabled":true,"minScore":0.7,"cooldownMs":60000,"maxPerHour":3,"minLength":8,"observer":false}}'),
+      res,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(json(res)).toMatchObject({ ok: true });
+  });
+
+  it('POST config：proactive 缺字段被 Schema 拒绝', async () => {
+    const { routes } = createHarness({ onUpdateConfig: () => true });
+    const res = fakeRes();
+    await invoke(
+      routes.get(BIND_CONFIG_PATH),
+      fakeReq('POST', { host: '127.0.0.1:3080' }, '{"proactive":{"enabled":"yes"}}'),
+      res,
+    );
+    expect(res.statusCode).toBe(400);
+    expect(json(res)).toMatchObject({ ok: false });
+  });
+
   it('跨站 Origin：403（state 与 manual 均拦截）', async () => {
     const { routes } = createHarness();
     const res1 = fakeRes();

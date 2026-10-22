@@ -14,7 +14,7 @@
  * 字段策略：只开放用户必要的配置；cwd 只读展示；超时与性能调优
  * 类字段走 profile patch / 环境变量。
  */
-import { createElement, useCallback, useEffect, useState, type CSSProperties, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
+import { createElement, Fragment, useCallback, useEffect, useState, type CSSProperties, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { BIND_CONFIG_PATH } from '../shared/bind-protocol.ts';
 
 /** 访问控制配置（与 src/config.ts 的 AccessControlConfig 对应的局部投影） */
@@ -23,6 +23,16 @@ interface AccessControlWire {
   c2cAllow: string[];
   groupMode: 'open' | 'allowlist' | 'disabled';
   groupAllow: string[];
+}
+
+/** 自主接话配置（与 src/config.ts 的 ProactiveConfig 对应的局部投影） */
+interface ProactiveWire {
+  enabled: boolean;
+  minScore: number;
+  cooldownMs: number;
+  maxPerHour: number;
+  minLength: number;
+  observer: boolean;
 }
 
 /** GET 回显的生效配置（appSecret 已剔除） */
@@ -37,6 +47,11 @@ type ConfigWire = {
   groupPrompt?: string;
   directPrompt?: string;
   access?: AccessControlWire;
+  proactive?: ProactiveWire;
+  replyDelayMs?: number;
+  replyDelayPerCharMs?: number;
+  replyDelayJitterMs?: number;
+  replyDelayMaxMs?: number;
   cwd?: string;
 };
 
@@ -219,6 +234,26 @@ function AreaRow({ label, help, value, rows, onChange }: {
   );
 }
 
+/** 数字行（label 上 + 数字输入下；非法值不提交，交服务端 Schema 兜底） */
+function NumberRow({ label, help, value, min, max, step, suffix, onChange }: {
+  label: string; help?: string; value: number; min: number; max: number; step?: number; suffix?: string;
+  onChange: (next: number) => void;
+}): ReactNode {
+  return createElement('div', { className: 'imqb2-field' },
+    createElement('span', { className: 'imqb2-label' }, suffix === undefined ? label : `${label}（${suffix}）`),
+    createElement('input', {
+      className: 'imqb2-input', type: 'number', value: String(value),
+      min, max, step: step ?? 1, spellCheck: false,
+      onChange: (event: ChangeEvent<HTMLInputElement>) => {
+        const next = Number(event.currentTarget.value);
+        // 空串或非数 → 不动（保持上次有效值），避免把 NaN 写进配置
+        if (Number.isFinite(next)) onChange(next);
+      },
+    }),
+    help === undefined ? null : createElement('p', { className: 'imqb2-hint' }, help),
+  );
+}
+
 /** 访问模式分段选择行 */
 function SegmentedRow({ label, help, value, options, onChange }: {
   label: string; help?: string; value: AccessMode;
@@ -241,9 +276,25 @@ const MODE_OPTIONS: ReadonlyArray<{ value: AccessMode; label: string }> = [
   { value: 'disabled', label: '禁用' },
 ];
 
+/**
+ * 稳定序列化：对象键按字典序输出。
+ *
+ * dirty 判断必须能识别「值相同但键序不同」——服务端回显的 proactive / access
+ * 键序取决于 profile patch 里的写法，与面板构造对象的键序未必一致，
+ * 直接 JSON.stringify 会把这类等价值误判成「已修改」。
+ */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).sort()
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+    .join(',')}}`;
+}
+
 /** 深比较（表单值与初始回显值的 dirty 判断） */
-function shallowEqual(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+function sameValue(a: unknown, b: unknown): boolean {
+  return stableStringify(a) === stableStringify(b);
 }
 
 /**
@@ -286,7 +337,7 @@ export function ConfigPanel(): ReactNode {
     if (busy || initial === null || form === null) return;
     const changed: Record<string, unknown> = {};
     for (const key of Object.keys(form) as Array<keyof ConfigWire>) {
-      if (!shallowEqual(form[key], initial[key])) {
+      if (!sameValue(form[key], initial[key])) {
         changed[key] = form[key];
       }
     }
@@ -331,8 +382,11 @@ export function ConfigPanel(): ReactNode {
     return createElement('p', { className: 'imqb2-hint', style: { padding: '12px 0' } }, '正在加载配置…');
   }
 
-  const dirty = (Object.keys(form) as Array<keyof ConfigWire>).some((key) => !shallowEqual(form[key], initial[key]));
+  const dirty = (Object.keys(form) as Array<keyof ConfigWire>).some((key) => !sameValue(form[key], initial[key]));
   const access: AccessControlWire = form.access ?? { c2cMode: 'open', c2cAllow: [], groupMode: 'open', groupAllow: [] };
+  const proactive: ProactiveWire = form.proactive ?? {
+    enabled: false, minScore: 0.55, cooldownMs: 120000, maxPerHour: 6, minLength: 6, observer: true,
+  };
 
   return createElement('form', { className: 'imqb2-form', onSubmit: submit },
     createElement('div', { className: 'imqb2-group-title' }, '服务范围'),
@@ -374,6 +428,64 @@ export function ConfigPanel(): ReactNode {
       label: '显示工具调用结果', checked: form.showToolResults ?? false,
       help: '在聊天中展示 agent 工具调用的结构化结果',
       onChange: (v) => { patch('showToolResults', v); },
+    }),
+
+    createElement('div', { className: 'imqb2-group-title' }, '自主接话'),
+    createElement(SwitchRow, {
+      label: '启用自主接话', checked: proactive.enabled,
+      help: '开启后，群里没点名她的消息也会被本地判定一次，值不值得接由她自己在回合内决定',
+      onChange: (v) => { patch('proactive', { ...proactive, enabled: v }); },
+    }),
+    proactive.enabled
+      ? createElement(Fragment, null,
+          createElement(NumberRow, {
+            label: '放行门槛', suffix: '0~1', value: proactive.minScore, min: 0, max: 1, step: 0.05,
+            help: '判定分低于此值不唤醒她。调高更安静，调低更活跃',
+            onChange: (v) => { patch('proactive', { ...proactive, minScore: v }); },
+          }),
+          createElement(NumberRow, {
+            label: '冷却间隔', suffix: '毫秒', value: proactive.cooldownMs, min: 0, max: 600000, step: 1000,
+            help: '同群两次主动接话的最小间隔，防止刷屏',
+            onChange: (v) => { patch('proactive', { ...proactive, cooldownMs: v }); },
+          }),
+          createElement(NumberRow, {
+            label: '每小时上限', suffix: '次', value: proactive.maxPerHour, min: 0, max: 60, step: 1,
+            help: '同群每小时主动接话次数上限，0 表示不限制',
+            onChange: (v) => { patch('proactive', { ...proactive, maxPerHour: v }); },
+          }),
+          createElement(NumberRow, {
+            label: '最短文本长度', suffix: '字', value: proactive.minLength, min: 0, max: 100, step: 1,
+            help: '短于该长度的消息不参与判定',
+            onChange: (v) => { patch('proactive', { ...proactive, minLength: v }); },
+          }),
+          createElement(SwitchRow, {
+            label: '记录判定日志', checked: proactive.observer,
+            help: '判定结果写入 ~/.dsh-qqbot/proactive-scores.jsonl，可据此调门槛',
+            onChange: (v) => { patch('proactive', { ...proactive, observer: v }); },
+          }),
+        )
+      : null,
+
+    createElement('div', { className: 'imqb2-group-title' }, '回复节奏'),
+    createElement(NumberRow, {
+      label: '基础延迟', suffix: '毫秒', value: form.replyDelayMs ?? 1200, min: 0, max: 60000, step: 100,
+      help: '发送前固定等待的时长，0 表示关闭延迟',
+      onChange: (v) => { patch('replyDelayMs', v); },
+    }),
+    createElement(NumberRow, {
+      label: '每字增量', suffix: '毫秒', value: form.replyDelayPerCharMs ?? 80, min: 0, max: 1000, step: 10,
+      help: '按回复字数追加的等待，字越多回得越慢',
+      onChange: (v) => { patch('replyDelayPerCharMs', v); },
+    }),
+    createElement(NumberRow, {
+      label: '随机抖动上限', suffix: '毫秒', value: form.replyDelayJitterMs ?? 1500, min: 0, max: 60000, step: 100,
+      help: '随机抖动的上限，让每次回复的间隔都不一样',
+      onChange: (v) => { patch('replyDelayJitterMs', v); },
+    }),
+    createElement(NumberRow, {
+      label: '单次上限', suffix: '毫秒', value: form.replyDelayMaxMs ?? 8000, min: 0, max: 300000, step: 100,
+      help: '单次回复延迟的封顶，0 表示不封顶',
+      onChange: (v) => { patch('replyDelayMaxMs', v); },
     }),
 
     createElement('div', { className: 'imqb2-group-title' }, '模型'),
