@@ -6,10 +6,10 @@
  * 凭据绑定编排（扫码状态机 + 端内绑定页路由）见 src/setup/。
  */
 import type { Context } from '@deepseek-ai/cordis';
-import { ConfigSchema, type ImQQBotConfig } from './config.ts';
+import { ConfigSchema, FIXED_PRESET_ID, type ImQQBotConfig } from './config.ts';
 import { bootstrapGateway } from './gateway/index.ts';
 import type { DshAgentRegistry } from './session/index.ts';
-import { getProfileDir, resolveEnv } from './shared/index.ts';
+import { getProfileDir, resolveEnv, traceStartup } from './shared/index.ts';
 import { ensureCredentials, persistCredentialsToProfile, registerBoundCredentialRoutes } from './setup/index.ts';
 import type { Logger } from './types.ts';
 
@@ -24,6 +24,31 @@ export type { ImQQBotConfig } from './config.ts';
 export async function apply(ctx: Context, config: ImQQBotConfig): Promise<void> {
   const agents = (ctx as unknown as Record<string, unknown>).agents as DshAgentRegistry;
   const logger: Logger = ((ctx as unknown as Record<string, unknown>).logger as Logger) ?? console;
+
+  // 启动留痕：只记关键状态，不记凭据
+  traceStartup('im-qqbot apply()', {
+    appId: config.appId ? `appId=${config.appId.slice(0, 4)}***` : 'appId=<空>',
+    preset: FIXED_PRESET_ID,
+    proactive: config.proactive?.enabled ?? '<无配置>',
+    requireMention: config.requireMention,
+  });
+
+  try {
+    await startPlugin(ctx, agents, config, logger);
+  } catch (err) {
+    // 启动失败必须留痕：宿主只把错误打进自己的 stdout，桌面端取不回来
+    traceStartup('im-qqbot 启动失败', err);
+    throw err;
+  }
+}
+
+/** 插件主体（拆出来便于统一 catch） */
+async function startPlugin(
+  ctx: Context,
+  agents: DshAgentRegistry,
+  config: ImQQBotConfig,
+  logger: Logger,
+): Promise<void> {
 
   let appId = resolveEnv(config.appId, 'QQBOT_APPID');
   let appSecret = resolveEnv(config.appSecret, 'QQBOT_SECRET');
