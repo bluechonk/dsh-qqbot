@@ -99,6 +99,8 @@ export interface ImQQBotConfig {
   historyLimit: number;
   /** 访问控制 */
   access: AccessControlConfig;
+  /** 自主接话（判断是否参与群聊对话） */
+  proactive: ProactiveConfig;
   /** 是否展示工具调用成功结果（工具错误始终展示） */
   showToolResults: boolean;
   /** 调试模式 */
@@ -111,6 +113,22 @@ export interface ImQQBotConfig {
   sendFile: SendFileConfig;
 }
 
+/** 自主接话配置 */
+export interface ProactiveConfig {
+  /** 启用自主接话：未被点名时由系统判断是否值得回应 */
+  enabled: boolean;
+  /** 放行门槛（0~1），低于此分不唤醒 AI */
+  minScore: number;
+  /** 同群两次主动接话的最小间隔(ms) */
+  cooldownMs: number;
+  /** 同群每小时主动接话上限，0=不限制 */
+  maxPerHour: number;
+  /** 参与判定的最短文本长度（更短的视为无意义） */
+  minLength: number;
+  /** 是否记录判定日志（便于事后调阈值） */
+  observer: boolean;
+}
+
 /** 访问控制子 Schema（独立导出：config 路由的服务端校验复用） */
 export const AccessControlSchema: Schema<AccessControlConfig> = Schema.object({
   c2cMode: Schema.union(['open', 'allowlist', 'disabled']).default('open').description('C2C访问模式'),
@@ -118,6 +136,16 @@ export const AccessControlSchema: Schema<AccessControlConfig> = Schema.object({
   groupMode: Schema.union(['open', 'allowlist', 'disabled']).default('open').description('群聊访问模式'),
   groupAllow: Schema.array(Schema.string()).default([]).description('群聊白名单'),
 });
+
+/** 自主接话子 Schema */
+export const ProactiveSchema: Schema<ProactiveConfig> = Schema.object({
+  enabled: Schema.boolean().default(false).description('启用自主接话（未被点名时由系统判断是否值得回应）'),
+  minScore: Schema.number().default(0.55).description('自主接话放行门槛(0~1)'),
+  cooldownMs: Schema.number().default(120000).description('同群两次主动接话的最小间隔(ms)'),
+  maxPerHour: Schema.number().default(6).description('同群每小时主动接话上限，0=不限制'),
+  minLength: Schema.number().default(6).description('参与判定的最短文本长度'),
+  observer: Schema.boolean().default(true).description('记录判定日志到 ~/.dsh-qqbot/proactive-scores.jsonl'),
+}).description('自主接话（判断是否参与群聊对话）');
 
 export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
   appId: Schema.string().default('').description('QQ 机器人 AppID'),
@@ -146,6 +174,14 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
     groupMode: 'open',
     groupAllow: [],
   }).description('访问控制'),
+  proactive: ProactiveSchema.default({
+    enabled: false,
+    minScore: 0.55,
+    cooldownMs: 120000,
+    maxPerHour: 6,
+    minLength: 6,
+    observer: true,
+  }).description('自主接话（判断是否参与群聊对话）'),
   showToolResults: Schema.boolean().default(false).description('是否展示工具调用成功结果（错误始终展示）'),
   debug: Schema.boolean().default(false),
   media: Schema.object({

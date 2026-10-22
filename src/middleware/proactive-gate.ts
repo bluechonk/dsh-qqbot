@@ -1,0 +1,136 @@
+/**
+ * 主动接话门控 — 决定群消息要不要唤醒 AI
+ *
+ * 放在 mentionGate **之后**：mentionGate 已把 wasMentioned 写进 ctx.state.mention，
+ * 这里直接读，不自己重复实现 @ 判定。
+ *
+ * 三种结果：
+ *   - 被 @         → 必回（放行）
+ *   - 自主判定值得 → 放行，并标记 proactive.mode='chose'（入站会加背景说明）
+ *   - 判定不值得   → 拦截（消息留在 historyBuffer，不唤醒 AI）
+ *
+ * ⚠️ 异常一律吞掉并放行：主动接话层永远不能影响原有回话能力。
+ */
+import type { MiddlewareContext } from '@tencent-connect/qqbot-nodejs';
+import type { ImQQBotConfig } from '../config.ts';
+import type { Logger } from '../types.ts';
+import { createLexicalGate, stripMentions } from '../features/proactive/lexical-gate.ts';
+import type { ProactiveDecision } from '../features/proactive/types.ts';
+import type { ProactiveCooldown } from '../features/proactive/cooldown.ts';
+import type { ProactiveObserver } from '../features/proactive/observer.ts';
+
+/** 门控选项 */
+export interface ProactiveGateOptions {
+  config: ImQQBotConfig;
+  logger: Logger;
+  cooldown: ProactiveCooldown;
+  observer: ProactiveObserver;
+}
+
+/** 消息上的 mention 状态（SDK mentionGate 写入） */
+interface MentionState {
+  wasMentioned?: boolean;
+}
+
+/** 消息上的 mentions 列表（SDK 解析的结构化 @ 列表） */
+interface MentionEntry {
+  is_you?: boolean;
+}
+
+export function proactiveGate(options: ProactiveGateOptions) {
+  const { config, logger, cooldown, observer } = options;
+  const proactive = config.proactive;
+  const gate = createLexicalGate({ minLength: proactive.minLength, minScore: proactive.minScore });
+
+  return async (ctx: MiddlewareContext, next: () => Promise<void>): Promise<void> => {
+    // 未启用 → 完全交给 mentionGate 的原有语义（零行为变更）
+    if (!proactive.enabled) {
+      await next();
+      return;
+    }
+
+    try {
+      const msg = ctx.message as unknown as {
+        kind?: string;
+        content?: string;
+        groupOpenid?: string;
+        mentions?: MentionEntry[];
+      };
+      // 私聊不受门控影响
+      if (msg.kind !== 'group') {
+        await next();
+        return;
+      }
+
+      const state = ctx.state as { mention?: MentionState; proactive?: ProactiveDecision };
+      const wasMentioned = state.mention?.wasMentioned === true;
+      const groupId = msg.groupOpenid ?? '';
+
+      // 被 @ → 必回
+      if (wasMentioned) {
+        state.proactive = { mode: 'mentioned' };
+        await next();
+        return;
+      }
+
+      // 这条 @ 的是别人 → 那轮对话的方向是别人
+      const mentions = Array.isArray(msg.mentions) ? msg.mentions : [];
+      const mentionedOthers = mentions.length > 0 && !mentions.some((m) => m?.is_you === true);
+
+      const text = stripMentions(msg.content ?? '');
+      const verdict = gate.evaluate({ text, mentioned: false, mentionedOthers });
+
+      // 判定失败（实现不可用）→ 按"未知"处理，不拦
+      if (verdict === undefined) {
+        await next();
+        return;
+      }
+
+      const worth = verdict.worth;
+      const cooldownLeft = cooldown.remaining(groupId);
+      const hourlyUsed = cooldown.usedThisHour(groupId);
+      const hourlyFull = cooldown.hourlyExhausted(groupId);
+
+      observer.log({
+        gid: groupId,
+        score: verdict.score,
+        worth,
+        reason: verdict.reason,
+        min: proactive.minScore,
+        mentionOthers: mentionedOthers,
+        cooldownLeft,
+        hourlyUsed,
+        hourlyFull,
+        chars: text.length,
+      });
+
+      if (!worth) {
+        state.proactive = { mode: 'observed', score: verdict.score, reason: verdict.reason, blocked: 'not-worth' };
+        logger.debug(`im-qqbot: proactive skip (not worth): score=${verdict.score.toFixed(3)} reason=${verdict.reason}`);
+        ctx.stop('proactive:not-worth');
+        return;
+      }
+      if (cooldownLeft > 0) {
+        state.proactive = { mode: 'observed', score: verdict.score, reason: verdict.reason, blocked: 'cooldown' };
+        logger.debug(`im-qqbot: proactive skip (cooldown ${cooldownLeft}ms left)`);
+        ctx.stop('proactive:cooldown');
+        return;
+      }
+      if (hourlyFull) {
+        state.proactive = { mode: 'observed', score: verdict.score, reason: verdict.reason, blocked: 'hourly-cap' };
+        logger.debug(`im-qqbot: proactive skip (hourly cap ${hourlyUsed})`);
+        ctx.stop('proactive:hourly-cap');
+        return;
+      }
+
+      // 值得接话 → 放行，并记账
+      cooldown.record(groupId);
+      state.proactive = { mode: 'chose', score: verdict.score, reason: verdict.reason };
+      logger.info(`im-qqbot: proactive picked: score=${verdict.score.toFixed(3)} reason=${verdict.reason}`);
+      await next();
+    } catch (err) {
+      logger.warn(`im-qqbot: proactive gate error, falling through: ${err instanceof Error ? err.message : String(err)}`);
+      await next();
+    }
+  };
+}

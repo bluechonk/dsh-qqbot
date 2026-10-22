@@ -26,12 +26,16 @@ import { buildCommandList } from '../commands/index.ts';
 import { attachmentProcessor } from '../middleware/attachment.ts';
 import { questionAnswer } from '../middleware/question-answer.ts';
 import { getHistoryStore, historyGroupKey } from '../features/history-store.ts';
+import { proactiveGate } from '../middleware/proactive-gate.ts';
+import type { ProactiveCooldown } from '../features/proactive/cooldown.ts';
+import type { ProactiveObserver } from '../features/proactive/observer.ts';
 
 export function setupMiddlewares(
   bot: QQBot,
   config: ImQQBotConfig,
   manager: SessionManager,
   logger: Logger,
+  proactive: { cooldown: ProactiveCooldown; observer: ProactiveObserver },
 ): void {
   // 1. 错误兜底（最外层洋葱皮）
   bot.use(errorHandler());
@@ -70,9 +74,16 @@ export function setupMiddlewares(
   }));
 
   // 5. 群聊 @bot 门控
+  //    自主接话开启时改为 passthrough：只标记不拦，拦截职责交给紧随其后的 proactiveGate。
+  //    这样「被 @ 必回」与「未 @ 由判定决定」两层独立演进；未开启时行为与原来逐字一致。
   bot.use(mentionGate({
     requireMentionInGroup: config.requireMention,
+    passthrough: config.proactive.enabled,
   }));
+
+  // 5.5 自主接话判定：未被点名时判断这条值不值得接话
+  //     必须挂在 mentionGate 之后——ctx.state.mention.wasMentioned 是那里写的。
+  bot.use(proactiveGate({ config, logger, cooldown: proactive.cooldown, observer: proactive.observer }));
 
   // 6. 内容清洗（去 @marker、表情标签、多余空白）
   bot.use(contentSanitizer({

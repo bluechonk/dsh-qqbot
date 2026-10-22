@@ -20,6 +20,7 @@ import {
   type MediaKind,
 } from './attachment.ts';
 import { clearGroupHistory } from '../features/history-store.ts';
+import type { ProactiveDecision } from '../features/proactive/types.ts';
 import type { MiddlewareContext } from '@tencent-connect/qqbot-nodejs';
 
 // ── 类型定义 ──
@@ -61,6 +62,8 @@ interface MiddlewareState {
   history?: HistoryEntry[];
   envelope?: string;
   mention?: MentionState;
+  /** 自主接话门控的判定结果（见 src/features/proactive/types.ts） */
+  proactive?: ProactiveDecision;
   processedAttachments?: ProcessedAttachment[];
   downloadedFiles?: DownloadedFile[];
   downloadedQuoteFiles?: DownloadedFile[];
@@ -175,10 +178,27 @@ function assembleAgentBody(
 
   const dynamicCtx = buildDynamicCtx(msg, state);
 
-  const base = dynamicCtx ? `${dynamicCtx}${userMessage}` : userMessage;
+  // 自主接话：这条没点名她，是系统粗筛后认为可能值得接话 → 补一段背景说明
+  const proactiveHint = buildProactiveHint(state.proactive);
+
+  const base = proactiveHint
+    ? `${proactiveHint}${dynamicCtx ? `${dynamicCtx}${userMessage}` : userMessage}`
+    : (dynamicCtx ? `${dynamicCtx}${userMessage}` : userMessage);
   const agentBody = buildAgentBody(base, state.history, isGroup, wasMentioned);
 
   return agentBody;
+}
+
+/**
+ * 自主接话的背景提示（仅 mode='chose' 时给出）。
+ *
+ * 告诉模型：这条消息没有点名你，是系统粗筛后认为可能值得接话；
+ * 若此刻插话自然就回一句，不该插就回 [skip] 表示沉默。
+ */
+function buildProactiveHint(decision: ProactiveDecision | undefined): string {
+  if (decision?.mode !== 'chose') return '';
+  return '【群聊背景】这条消息没有点名你，是系统粗筛后认为可能值得接话。'
+    + '若此刻插话自然就回一句；若不该插，回 [skip] 表示本轮沉默。\n\n';
 }
 
 /**

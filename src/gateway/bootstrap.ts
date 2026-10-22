@@ -25,6 +25,9 @@ import { setupMiddlewares } from './middleware-setup.ts';
 import { startMediaCleanup } from '../media/media-cleaner.ts';
 import { ensureVisionInputModal, registerDescribeImageTool } from '../media/vision-tool.ts';
 import { registerSendFileTool, type MediaSenderLike } from '../media/send-file-tool.ts';
+import { ProactiveCooldown } from '../features/proactive/cooldown.ts';
+import { ProactiveObserver } from '../features/proactive/observer.ts';
+import { proactiveDataPath } from '../features/proactive/index.ts';
 
 /**
  * interaction 统一分发器：按 button_data 的顶层 `t` 判别字段，路由到对应
@@ -63,7 +66,18 @@ export async function bootstrapGateway(
   logger.info(`QQBot SDK initialized (UA: ${userAgent})`);
 
   // ── 中间件链 ──
-  setupMiddlewares(bot, config, manager, logger);
+  // 自主接话的频率控制与判定日志（进程内状态 + 本地 jsonl）
+  const proactive = {
+    cooldown: new ProactiveCooldown({
+      cooldownMs: config.proactive.cooldownMs,
+      maxPerHour: config.proactive.maxPerHour,
+    }),
+    observer: new ProactiveObserver({
+      filePath: proactiveDataPath('proactive-scores.jsonl'),
+      enabled: config.proactive.observer,
+    }),
+  };
+  setupMiddlewares(bot, config, manager, logger, proactive);
 
   // ── 入站：经过中间件链后的消息交给 dsh agent ──
   bot.on('message', async (mCtx: MiddlewareContext) => {
