@@ -50,3 +50,19 @@ export function sleep(ms: number): Promise<void> {
   if (ms <= 0) return Promise.resolve();
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/**
+ * 目标延迟扣掉「回合已消耗时间」后，还需再等多久。
+ *
+ * 拟人延迟模拟的是打字时间，应当与模型思考**重叠**，而不是想完再额外等。
+ * 模型已经跑了几十秒时，剩余为 0 —— 直接发，不给体验添堵；
+ * 模型秒回时剩余接近目标值 —— 补上拟人节奏。
+ *
+ * @param targetMs 目标延迟（computeReplyDelay 的结果）
+ * @param elapsedMs 从回合起点到现在已经过去的时间
+ */
+export function computeRemainingDelay(targetMs: number, elapsedMs: number): number {
+  if (targetMs <= 0) return 0;
+  const remaining = targetMs - Math.max(0, elapsedMs);
+  return remaining > 0 ? Math.round(remaining) : 0;
+}

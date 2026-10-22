@@ -8,7 +8,7 @@ import type { SessionManager, SessionRecord } from '../session/index.ts';
 import type { ImQQBotConfig } from '../config.ts';
 import type { Logger } from '../types.ts';
 import { chunkMarkdownText } from './chunker.ts';
-import { computeReplyDelay, sleep } from './reply-delay.ts';
+import { computeRemainingDelay, computeReplyDelay, sleep } from './reply-delay.ts';
 import { isSkipReply } from '../shared/skip-marker.ts';
 import { OutboundBuffer, type QQBotSender } from './outbound-buffer.ts';
 import { formatToolResult, type ToolsRegistryLike, type ToolResultData } from './tool-presenter.ts';
@@ -63,6 +63,14 @@ class OutboundRouter {
   private readonly toolCalls = new Map<string, ToolCallRecord>();
   /** 每会话当前流式 attemptId：LLM 重试会发布新 attempt，用于 reset 与迟到帧过滤 */
   private readonly streamAttempts = new Map<string, string>();
+  /**
+   * 每会话的回合起始时刻（`turn/start` 到达时打点）。
+   *
+   * 拟人延迟以此为计时基准：延迟模拟的是「打字时间」，应当与模型思考**重叠**，
+   * 而不是想完再额外等一段。慢模型（首 token 几十秒）几乎总能把延迟消化完，
+   * 快模型才会真正等满——这才叫「该慢的慢、该等的等」。
+   */
+  private readonly turnStartedAt = new Map<string, number>();
   private readonly manager: SessionManager;
   private readonly bot: QQBotSender;
   private readonly config: ImQQBotConfig;
@@ -92,6 +100,10 @@ class OutboundRouter {
     if (record === undefined) return;
 
     switch (event.type) {
+      case 'turn/start':
+        // 回合起点：出站延迟的计时基准（事件实时到达，用本地时钟打点即可）
+        this.turnStartedAt.set(session.header.id, Date.now());
+        break;
       case 'assistant/chunk':
         this.onChunk(session.header.id, record, event);
         break;
@@ -161,7 +173,7 @@ class OutboundRouter {
             this.logger.info('im-qqbot: reply skipped by model (silence marker)');
             return false;
           }
-          await this.delayBeforeSend(body);
+          await this.delayBeforeSend(sessionId, body);
           return true;
         },
       );
@@ -200,7 +212,7 @@ class OutboundRouter {
       return;
     }
 
-    void this.send(record, fullText, 'sendMarkdown');
+    void this.send(record, fullText, 'sendMarkdown', true);
     this.buffers.delete(sessionId);
   }
 
@@ -250,9 +262,19 @@ class OutboundRouter {
     this.logger.debug(`im-qqbot: turn/end sessionId=${sessionId}`);
   }
 
-  /** 统一发送：拟人延迟 → 切分 + 逐 chunk 发送 + 错误记录 */
-  private async send(record: SessionRecord, text: string, tag: string): Promise<void> {
-    await this.delayBeforeSend(text);
+  /**
+   * 统一发送：切分 + 逐 chunk 发送 + 错误记录
+   *
+   * @param mimicDelay 是否走拟人延迟。只对**正常回复**开启；
+   *                   工具结果与错误提示要立刻送到，不能被延迟拖住。
+   */
+  private async send(
+    record: SessionRecord,
+    text: string,
+    tag: string,
+    mimicDelay = false,
+  ): Promise<void> {
+    if (mimicDelay) await this.delayBeforeSend(record.sessionId, text);
     const chunks = chunkMarkdownText(text, this.config.textChunkLimit);
     for (const chunk of chunks) {
       try {
@@ -264,21 +286,34 @@ class OutboundRouter {
   }
 
   /**
-   * 发送前的拟人延迟。
+   * 发送前的拟人延迟（与模型思考时间重叠）。
    *
-   * 真人在群里打字要时间；秒回是最明显的机器人特征。
-   * 延迟按「基础 + 每字 + 随机抖动」计算，上限由配置封顶。
+   * 真人在群里打字要时间，秒回是最明显的机器人特征。但延迟不该**叠加**在
+   * 模型耗时之后：模型已经想了几十秒时，再等 2 秒纯属给用户体验添堵。
+   *
+   * 所以计时基准取**回合起点**（`turn/start`）：
+   *   remaining = 目标延迟 − 已经过去的时间
+   *   remaining ≤ 0 → 立刻发（模型本身够慢了）
+   *   remaining > 0 → 只等剩下的部分（模型太快，补上拟人节奏）
    */
-  private async delayBeforeSend(text: string): Promise<void> {
-    const ms = computeReplyDelay(text, {
+  private async delayBeforeSend(sessionId: string, text: string): Promise<void> {
+    const targetMs = computeReplyDelay(text, {
       baseMs: this.config.replyDelayMs,
       perCharMs: this.config.replyDelayPerCharMs,
       jitterMs: this.config.replyDelayJitterMs,
       maxMs: this.config.replyDelayMaxMs,
     });
-    if (ms <= 0) return;
-    this.logger.debug(`im-qqbot: reply delay ${ms}ms`);
-    await sleep(ms);
+    if (targetMs <= 0) return;
+
+    const startedAt = this.turnStartedAt.get(sessionId);
+    const elapsedMs = startedAt === undefined ? 0 : Date.now() - startedAt;
+    const remainingMs = computeRemainingDelay(targetMs, elapsedMs);
+    if (remainingMs <= 0) {
+      this.logger.debug(`im-qqbot: reply delay absorbed by turn time (${elapsedMs}ms ≥ ${targetMs}ms)`);
+      return;
+    }
+    this.logger.debug(`im-qqbot: reply delay ${remainingMs}ms (target ${targetMs}ms, elapsed ${elapsedMs}ms)`);
+    await sleep(remainingMs);
   }
 }
 

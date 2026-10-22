@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeReplyDelay } from './reply-delay.ts';
+import { computeRemainingDelay, computeReplyDelay } from './reply-delay.ts';
 
 describe('computeReplyDelay', () => {
   it('基础与每字延迟都为 0 时不延迟', () => {
@@ -34,5 +34,28 @@ describe('computeReplyDelay', () => {
 
   it('不会返回负数', () => {
     expect(computeReplyDelay('', { baseMs: 0, perCharMs: 0, jitterMs: 0, maxMs: 0 })).toBe(0);
+  });
+});
+
+describe('computeRemainingDelay', () => {
+  it('模型很快返回时，补足剩余延迟', () => {
+    expect(computeRemainingDelay(2000, 500)).toBe(1500);
+  });
+
+  it('模型耗时已超过目标延迟时，立刻发送（不再额外等待）', () => {
+    expect(computeRemainingDelay(2000, 2000)).toBe(0);
+    expect(computeRemainingDelay(2000, 30000)).toBe(0);
+  });
+
+  it('目标延迟为 0 时不等', () => {
+    expect(computeRemainingDelay(0, 0)).toBe(0);
+  });
+
+  it('拿不到回合起点（elapsed=0）时按满额等', () => {
+    expect(computeRemainingDelay(1200, 0)).toBe(1200);
+  });
+
+  it('异常负 elapsed 被兜底为 0', () => {
+    expect(computeRemainingDelay(1200, -50)).toBe(1200);
   });
 });

@@ -21,6 +21,12 @@ export interface TurnEndReason {
   code?: string;
 }
 
+/** turn/start 事件（回合起点：出站延迟以此为计时基准） */
+export interface TurnStartEvent {
+  type: 'turn/start';
+  turn: number;
+}
+
 /** assistant/chunk 事件（仅保留 text-delta） */
 export interface ChunkEvent {
   type: 'assistant/chunk';
@@ -62,6 +68,7 @@ export type OutboundEvent =
   | MessageEvent
   | ToolCallEvent
   | ToolResultEvent
+  | TurnStartEvent
   | TurnEndEvent;
 
 /**
@@ -99,6 +106,11 @@ export function parseEvent(raw: RawSessionEvent): OutboundEvent | undefined {
     case 'turn/end': {
       const reason = (raw.data as { reason?: TurnEndReason }).reason ?? {};
       return { type: 'turn/end', reason };
+    }
+
+    case 'turn/start': {
+      const turn = (raw.data as { turn?: number }).turn;
+      return { type: 'turn/start', turn: typeof turn === 'number' ? turn : 0 };
     }
 
     default:
