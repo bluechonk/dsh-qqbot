@@ -37,10 +37,24 @@ interface MentionEntry {
   is_you?: boolean;
 }
 
+/**
+ * 检测 content 里是否含本机器人的 @ 标记。
+ *
+ * SDK 的 mentionGate 也做这件事，但它的判定建立在「平台一定下发某个字段」
+ * 之上；这里按同样口径兜一遍，任一环节缺失都不至于把「@ 了她」误判成
+ * 「没 @」。正则与 SDK 保持一致：`<@!appId>` 与 `<@appId>`。
+ */
+function detectMentionMarker(content: string, appId: string): boolean {
+  if (!content || !appId) return false;
+  const escaped = appId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`<@!?${escaped}>`).test(content);
+}
+
 export function proactiveGate(options: ProactiveGateOptions) {
   const { config, logger, cooldown, observer } = options;
   const proactive = config.proactive;
   const gate = createLexicalGate({ minLength: proactive.minLength, minScore: proactive.minScore });
+  const appId = config.appId;
 
   return async (ctx: MiddlewareContext, next: () => Promise<void>): Promise<void> => {
     // 未启用 → 完全交给 mentionGate 的原有语义（零行为变更）
@@ -64,24 +78,40 @@ export function proactiveGate(options: ProactiveGateOptions) {
       }
 
       const state = ctx.state as { mention?: MentionState; proactive?: ProactiveDecision };
-      const wasMentioned = state.mention?.wasMentioned === true;
       const groupId = msg.groupOpenid ?? '';
       // 诊断用：@ 判定依赖这三者，出问题时日志里直接能看到
       const rawEventType = msg.rawEventType;
+      const rawContent = msg.content ?? '';
 
-      // 被 @ → 必回
-      if (wasMentioned) {
+      // 被 @ → 必回。
+      // ⚠️ 不只看 SDK 写的 state.mention：那个判定依赖 rawEventType 与
+      // content 里的 <@!appId> 标记，平台侧字段缺失时（is_you 从无赋值处）
+      // 会误判成"没被 @"。这里按同样口径再判一次，两条路任一命中即放行。
+      const mentions = Array.isArray(msg.mentions) ? msg.mentions : [];
+      const atMarkerInContent = detectMentionMarker(rawContent, appId);
+      const mentionedSelf = state.mention?.wasMentioned === true
+        || rawEventType === 'GROUP_AT_MESSAGE_CREATE'
+        || mentions.some((m) => m?.is_you === true)
+        || atMarkerInContent;
+
+      if (mentionedSelf) {
         state.proactive = { mode: 'mentioned' };
-        observer.log({ gid: groupId, decision: 'mentioned', rawEventType, mentionState: state.mention });
+        observer.log({
+          gid: groupId,
+          decision: 'mentioned',
+          rawEventType,
+          mentionState: state.mention,
+          atMarkerInContent,
+          chars: rawContent.length,
+        });
         await next();
         return;
       }
 
       // 这条 @ 的是别人 → 那轮对话的方向是别人
-      const mentions = Array.isArray(msg.mentions) ? msg.mentions : [];
       const mentionedOthers = mentions.length > 0 && !mentions.some((m) => m?.is_you === true);
 
-      const text = stripMentions(msg.content ?? '');
+      const text = stripMentions(rawContent);
       const verdict = gate.evaluate({ text, mentioned: false, mentionedOthers });
 
       // 判定失败（实现不可用）→ 按"未知"处理，不拦
