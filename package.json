@@ -39,11 +39,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/tencent-connect/dsh-qqbot.git"
+    "url": "https://github.com/bluechonk/dsh-qqbot.git"
   },
-  "homepage": "https://github.com/tencent-connect/dsh-qqbot#readme",
+  "homepage": "https://github.com/bluechonk/dsh-qqbot#readme",
   "bugs": {
-    "url": "https://github.com/tencent-connect/dsh-qqbot/issues"
+    "url": "https://github.com/bluechonk/dsh-qqbot/issues"
   },
   "dsh": {
     "bundle": {
