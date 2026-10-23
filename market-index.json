@@ -1,0 +1,41 @@
+{
+  "format": 1,
+  "title": {
+    "en": "bluechonk plugin market",
+    "zh": "bluechonk 插件市场"
+  },
+  "description": {
+    "en": "Personal plugin market for the DeepSeek Harness: install plugins straight from GitHub repositories.",
+    "zh": "DeepSeek Harness 的个人插件市场：直接从 GitHub 仓库安装插件。"
+  },
+  "plugins": [
+    {
+      "name": "@bluechonk/dsh-qqbot",
+      "title": {
+        "en": "QQ Bot Channel",
+        "zh": "QQ 机器人"
+      },
+      "description": {
+        "en": "Adds a QQ Bot section to the settings page: bind a QQ bot with a QR code inside the app, chat in private and group chats, and let the bot decide on its own whether to join a group conversation instead of waiting to be @-mentioned.",
+        "zh": "在设置页新增「QQ 机器人」分区：端内扫码绑定 QQ 机器人，把私聊与群聊接进 dsh；群里不用点名，她会自己判断该不该接话。"
+      },
+      "icon": "https://raw.githubusercontent.com/bluechonk/dsh-qqbot/main/icon.svg",
+      "author": "bluechonk",
+      "homepage": "https://github.com/bluechonk/dsh-qqbot",
+      "repository": {
+        "url": "https://github.com/bluechonk/dsh-qqbot"
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1792718773,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/bluechonk/dsh-qqbot",
+            "commit": "c87d47af5c0edbd0c822766f04af826d69dac217"
+          }
+        }
+      ]
+    }
+  ]
+}
