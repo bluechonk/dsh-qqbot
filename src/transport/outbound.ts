@@ -6,7 +6,7 @@
  */
 import type { SessionManager, SessionRecord } from '../session/index.ts';
 import type { ImQQBotConfig } from '../config.ts';
-import type { Logger } from '../types.ts';
+import type { ChatScope, Logger } from '../types.ts';
 import { chunkMarkdownText } from './chunker.ts';
 import { computeRemainingDelay, computeReplyDelay, sleep } from './reply-delay.ts';
 import { isSkipReply } from '../shared/skip-marker.ts';
@@ -95,6 +95,8 @@ class OutboundRouter {
   private readonly toolsRegistry: ToolsRegistryLike | undefined;
   /** 机器人发过群消息的通知回调（M1） */
   private readonly onBotSpoke: ((groupId: string) => void) | undefined;
+  /** 机器人回复的通知回调（长期记忆：把回复归入该 peer 最近发言人的缓冲） */
+  private readonly onReply: ((scope: ChatScope, scopeId: string, text: string) => void) | undefined;
   /** sessionKey → 最近因 blocked 而重建会话的时刻（防抖动） */
   private readonly blockedResets = new Map<string, number[]>();
 
@@ -105,6 +107,7 @@ class OutboundRouter {
     logger: Logger,
     toolsRegistry: ToolsRegistryLike | undefined,
     onBotSpoke?: (groupId: string) => void,
+    onReply?: (scope: ChatScope, scopeId: string, text: string) => void,
   ) {
     this.manager = manager;
     this.bot = bot;
@@ -112,6 +115,7 @@ class OutboundRouter {
     this.logger = logger;
     this.toolsRegistry = toolsRegistry;
     this.onBotSpoke = onBotSpoke;
+    this.onReply = onReply;
   }
 
   /** 事件分发入口 */
@@ -352,6 +356,12 @@ class OutboundRouter {
   ): Promise<void> {
     if (mimicDelay) await this.delayBeforeSend(record.sessionId, text);
 
+    // ── 长期记忆：把这条回复记入该 peer 最近发言人的对话缓冲 ──
+    // 只记正常回复（mimicDelay）；工具结果与错误提示不属于对话内容。
+    if (mimicDelay && text.trim() !== '') {
+      this.onReply?.(record.replyTarget.scope, record.replyTarget.targetId, text);
+    }
+
     // ── 表情包（M5）──
     // 必须在发文字**之前**决定：短回复可能要用图**替代**文字，而不是追加。
     // 真人发表情常常只有一张图、零文字；每次都「文字+图片」反而假。
@@ -537,8 +547,10 @@ export function createOutboundHandler(
    * 它只需要在「我说话了」时通知一声，依赖方向更干净。
    */
   onBotSpoke?: (groupId: string) => void,
+  /** 机器人回复的回调（长期记忆：回复归入该 peer 最近发言人的缓冲） */
+  onReply?: (scope: ChatScope, scopeId: string, text: string) => void,
 ): OutboundHandlers {
-  const router = new OutboundRouter(manager, bot, config, logger, toolsRegistry, onBotSpoke);
+  const router = new OutboundRouter(manager, bot, config, logger, toolsRegistry, onBotSpoke, onReply);
   return {
     routeSessionEvent: (session, event) => router.route(session, event),
     routeStreamFrame: (agentId, delta) => router.routeStreamFrame(agentId, delta),

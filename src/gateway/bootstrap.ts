@@ -32,7 +32,8 @@ import { RawEventLog } from '../features/raw-event-log.ts';
 import { MiddlewareDropLog } from '../features/middleware-log.ts';
 import { GroupActivity } from '../features/proactive/activity.ts';
 import { IdleTracker } from '../features/idle-topic/index.ts';
-import { flushPeopleStoreIfCreated } from '../features/people/index.ts';
+import { flushPeopleStoreIfCreated, getPeopleStore, MemoryTrigger } from '../features/people/index.ts';
+import type { LlmRuntimeLike } from '../features/people/summarizer.ts';
 
 /**
  * interaction 统一分发器：按 button_data 的顶层 `t` 判别字段，路由到对应
@@ -129,7 +130,7 @@ export async function bootstrapGateway(
     if (config.debug) {
       logger.debug(`← message (post-middleware): ${JSON.stringify(msg, null, 2).slice(0, 500)}`);
     }
-    await handleInbound(mCtx, manager, config, logger);
+    await handleInbound(mCtx, manager, config, logger, memory);
   });
 
   // ── 出站：dsh session/event → QQ 消息 ──
@@ -143,11 +144,39 @@ export async function bootstrapGateway(
 
   // 服务可用性留痕：附件/llm 缺失会让「图片作为多模态输入」静默降级成「只给路径」，
   // 启动时记一次，排查时不用猜（本项目的降级一律留痕）
+  let llm: LlmRuntimeLike | undefined;
+  try {
+    llm = ctx.get('llm') as LlmRuntimeLike | undefined;
+  } catch {
+    llm = undefined;
+  }
   traceStartup('im-qqbot 服务可用性', {
     attachments: serviceAvailable(ctx, 'attachments'),
     tools: toolsRegistry !== undefined,
-    llm: serviceAvailable(ctx, 'llm'),
+    llm: llm !== undefined,
   });
+
+  // ── 长期记忆触发器（默认关：people.memory.enabled=false 时全程惰性） ──
+  // 依赖两个前置：群友档案必须开着（档案 key 是记忆的落点）、摘要模型必须配了。
+  // 任一不满足就不构造，注入与摘要彻底不发生（构造函数里会 warn 具体缺什么）。
+  const memory = config.people.enabled && config.people.memory.enabled
+    ? new MemoryTrigger(
+        {
+          appId: config.appId,
+          model: {
+            provider: config.people.memory.provider,
+            model: config.people.memory.model,
+            maxTokens: config.people.memory.maxTokens,
+          },
+          summarizeEveryTurns: config.people.memory.summarizeEveryTurns,
+          maxFacts: config.people.memory.maxFacts,
+          maxInputChars: config.people.memory.maxInputChars,
+          logger,
+        },
+        llm,
+        getPeopleStore(true, config.settingsNs),
+      )
+    : undefined;
 
   // 发送适配器：将 QQBot 实例适配为 QQBotSender（openStream 参数形态不同）。
   // sendMarkdown 统一做被动回复限额管控：同一 msgId 超限/过期时降级主动推送。
@@ -169,6 +198,7 @@ export async function bootstrapGateway(
       proactive.activity.recordBotSpoke(groupId);
       proactive.idle.recordBotSpoke(groupId);
     },
+    (scope, scopeId, text) => memory?.recordReply({ scope, scopeId, text }),
   );
   (ctx as unknown as { on(event: string, handler: (...args: unknown[]) => void): void })
     .on('session/event', outbound.routeSessionEvent as (...args: unknown[]) => void);
