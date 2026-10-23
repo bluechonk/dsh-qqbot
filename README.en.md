@@ -102,6 +102,7 @@ Configuration lives in the `im-qqbot` entry of the profile's `cordis.patch.yml`,
 | `streaming` | boolean | `false` | Stream replies (always off in group chats) |
 | `showToolResults` | boolean | `false` | Show successful tool results (errors always shown) |
 | `debug` | boolean | `false` | Debug mode |
+| `rawEventLog` | boolean | `true` | Log unknown gateway events to `~/.dsh-qqbot/raw-events.jsonl` (used to probe whether the platform pushes an event type, e.g. poke) |
 | `provider` | string | - | LLM provider name; empty inherits the host default |
 | `model` | string | - | Model name; empty inherits the host default |
 | `reasoningEffort` | `off`/`low`/`medium`/`high`/`max` | - | Reasoning effort; empty lets the host decide (`off` recommended for qqchat) |

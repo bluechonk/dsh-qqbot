@@ -100,6 +100,7 @@ pnpm build     # tsc（宿主半 → dist/）&& tsdown（浏览器半 → lib/cl
 | `streaming` | boolean | `false` | 是否启用流式输出（群聊始终不启用） |
 | `showToolResults` | boolean | `false` | 是否展示工具调用成功结果（错误始终展示） |
 | `debug` | boolean | `false` | 调试模式 |
+| `rawEventLog` | boolean | `true` | 记录未知网关事件到 `~/.dsh-qqbot/raw-events.jsonl`（用于探测平台是否推送某类事件，如「戳一戳」） |
 | `provider` | string | - | LLM 提供商名称，留空继承宿主默认 |
 | `model` | string | - | 模型名称，留空继承宿主默认 |
 | `reasoningEffort` | `off`/`low`/`medium`/`high`/`max` | - | 思考强度，留空由宿主决定（qqchat 建议 `off`） |
@@ -213,12 +214,18 @@ profile  <DSH_HOME>/profiles/<profile>/cordis.patch.yml   # im-qqbot 条目
 ## 已知限制
 
 - 目前**只支持一个** QQ 机器人；多账号的方案见 [docs/多机器人.md](docs/多机器人.md)（未实现）
-- 主动开口只有「群里自主接话」，没有「定时主动开口」与「主动私聊」
-- 暂不支持表情包（方案见 [docs/拟人化路线图.md](docs/拟人化路线图.md)）
+- **主动开口受平台配额限制**：QQ 的被动回复只有约 5 分钟窗口，超时只能走「主动消息」，
+  而主动消息有按群按月的配额。所以「冷场起话题」只做到**判断时机**
+  （`features/idle-topic/`），真正发消息待配额确认
+- 表情包**默认关闭且仓库不含任何素材**（版权归原作者）：功能与发送链路都已实现，
+  但需自备图片并按 [docs/表情包.md](docs/表情包.md) 建图库；
+  另需机器人具备发送图片的权限
 - 群聊**不支持流式输出**（QQ 的群消息没有流式接口），私聊才支持
 - 视觉理解需要另行配置视觉模型的 provider 与 model，默认关闭
 - 设置页文案硬编码中文，暂未接入 i18n
 - 依赖 QQ 开放平台的群消息推送策略：机器人只能收到平台推给它的消息
+- **拟人化能力全部未在真实群聊实测过**（判定逻辑有单测覆盖）：
+  照 [docs/验收清单.md](docs/验收清单.md) 走一遍即可确认
 
 ## 开发
 
