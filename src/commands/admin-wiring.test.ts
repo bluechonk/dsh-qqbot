@@ -8,7 +8,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { buildCommandList } from './index.ts';
-import type { CommandDeps } from './types.ts';
+import type { CommandDeps, CategorizedCommand } from './types.ts';
 import type { ImQQBotConfig } from '../config.ts';
 import type { SessionManager } from '../session/index.ts';
 
@@ -38,10 +38,12 @@ function ctx(senderId: string) {
   } as never;
 }
 
+/** 按任意名字（含别名）找命令 */
 function find(deps: CommandDeps, name: string) {
-  const cmd = buildCommandList(deps).find(
-    (c) => (Array.isArray(c.name) ? c.name[0] : c.name) === name,
-  );
+  const cmd = buildCommandList(deps).find((c) => {
+    const names = Array.isArray(c.name) ? c.name : [c.name];
+    return names.includes(name);
+  });
   if (!cmd) throw new Error(`命令不存在: ${name}`);
   return cmd;
 }
@@ -73,6 +75,19 @@ describe('命令权限接线', () => {
     for (const name of ['whoami', 'bot-ping', 'bot-version', 'bot-help']) {
       expect(authorize(adminOnly, name, STRANGER), `${name} 应该对所有人开放`).toBe(true);
     }
+  });
+
+  it('/help 是 /bot-help 的别名（最顺手的名字也该能用）', () => {
+    // SDK 的 autoHelp 被关掉了，所以 /help 不是自动注册的；
+    // 但主人第一反应就是发 /help，别名让它也能用。
+    // 关键：**必须是同一个命令对象**（别名），不是注册第二个命令。
+    const list = buildCommandList(adminOnly);
+    const namesOf = (c: CategorizedCommand): string[] => (Array.isArray(c.name) ? c.name : [c.name]);
+    const canonical = list.find((c) => namesOf(c).includes('bot-help'));
+    const alias = list.find((c) => namesOf(c).includes('help'));
+    expect(canonical).toBeDefined();
+    expect(alias).toBe(canonical);
+    expect(authorize(adminOnly, 'help', STRANGER)).toBe(true);
   });
 
   it('名单为空时连主人也进不来（安全默认：先锁上）', () => {
