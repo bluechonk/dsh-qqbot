@@ -12,6 +12,9 @@
 
 ### 新增
 
+- **命令权限**：`admin.openids` 白名单 + `/whoami` 自助查 openid。除 `/whoami` / `/bot-ping` / `/bot-version` / `/bot-help` 外，命令都要求管理员身份；`/bot-help` 按权限过滤。平台不告诉机器人谁是创建者，所以主人身份必须显式配置。
+- **中间件链丢弃留痕**：链首哨兵 + 并发合并留痕，落盘 `~/.dsh-qqbot/middleware-drops.jsonl`（`drop` 消息被丢 / `denied` 命令被拒 / `merge` N 条并成 1 轮）。此前链上各关卡丢弃时纹丝不动，是排查最大的盲区。
+- **preset 可切换**：默认仍是 `qqchat`（零工具 + 内置人格），但 `/preset` 支持切换。切换会重建会话（`agents.resume()` 改不了 preset），上下文保留。
 - **自主接话**：群里没人点名她时，由本地词法门控（零 token、零依赖）判断这条值不值得接；接不接最后由模型在回合内自己决定。设计见 [docs/自主接话.md](docs/自主接话.md)。
 - **同群冷却 + 每小时上限**：真人不会在群里连着插话，主动接话因此加了两层频率约束；状态在进程内存，重启归零。
 - **判定日志**：每次判定写一行 JSON 到 `~/.dsh-qqbot/proactive-scores.jsonl`（分数、理由、是否被冷却拦住），据此调门槛。
@@ -26,8 +29,10 @@
 
 ### 变更
 
-- 移除上游的 `persistent-shell`（终端）与 `tool-fs`（文件读写）工具：会话固定跑在插件自带的 `qqchat` 预设上，**零工具**，只说话。
-- 人格与句长约束由插件内置的 `qqchat` 预设提供（`cordis.patch.yml` 的 `preset-qqchat` 插入行），三层锁死：配置常量、session 挂载、`/preset` 只读。
+- 移除上游的 `persistent-shell`（终端）与 `tool-fs`（文件读写）工具：会话默认跑在插件自带的 `qqchat` 预设上，**零工具**，只说话（可切换，见上）。
+- 人格与句长约束由插件内置的 `qqchat` 预设提供（`cordis.patch.yml` 的 `preset-qqchat` 插入行）。
+  preset 解析优先级：per-peer 偏好（`/preset` 切换）> 插件配置 > `qqchat`；
+  「用户偏好」与「会话实际用的 preset」分开存储，避免切换后被一致性检测丢掉。
 - 群聊不启用流式输出（QQ 的群消息没有流式接口），私聊才流式。
 
 ### 修复
@@ -36,6 +41,12 @@
 - 补上浏览器半的类型检查：主 `tsconfig.json` 排除了 `src/client`，`pnpm build` 并不检查它，CI 单列 `typecheck:client` 一步。
 - 限定 vitest 用例范围到 `src/`，避免仓库里的临时副本让用例数翻倍。
 - 修正「自主接话」的语义：未被 @ **不扣分**（那正是她该主动接话的常态），扣分的应是「这条 @ 的是别人」。
+- 修复**中间件链静默丢弃**：去重、访问控制、@ 门控、限流、并发合并都会让消息「消失」，
+  而此前只有自主接话门控会记日志——主人看到的是「消息发了但机器人没反应」，
+  且 `people.json` 与会话日志纹丝不动，无从定位。现在统一留痕到 `middleware-drops.jsonl`。
+- 修复 **preset 偏好与实际值混用**：两者存在同一个字段时，
+  切换 preset 后一旦会话被回收重建，就会被自己的一致性检测丢掉并回到 `qqchat`。
+  现在拆成 `presets`（偏好）与 `sessionPresets`（实际值）。
 
 ### 标识
 
