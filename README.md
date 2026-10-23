@@ -111,6 +111,8 @@ pnpm build     # tsc（宿主半 → dist/）&& tsdown（浏览器半 → lib/cl
 | `access.c2cAllow` | string[] | `[]` | 私聊白名单（user openid） |
 | `access.groupMode` | `open`/`allowlist`/`disabled` | `open` | 群聊访问模式 |
 | `access.groupAllow` | string[] | `[]` | 群聊白名单（group openid） |
+| `admin.enabled` | boolean | `true` | 启用命令权限校验（关闭则所有人可执行高权限命令，仅调试用） |
+| `admin.openids` | string[] | `[]` | 管理员 openid 白名单（用 `/whoami` 查看自己的 openid） |
 | `proactive.enabled` | boolean | `true` | 自主接话总开关 |
 | `proactive.minScore` | number | `0.55` | 放行门槛（0~1） |
 | `proactive.cooldownMs` | number | `120000` | 同群两次主动接话的最小间隔（ms） |
@@ -177,17 +179,30 @@ profile  <DSH_HOME>/profiles/<profile>/cordis.patch.yml   # im-qqbot 条目
 
 ## 内置命令
 
-| 命令 | 说明 |
-|------|------|
-| `/new`（别名 `/reset` `/clear`） | 开始新会话（清空上下文） |
-| `/compact` | 压缩会话历史（摘要替换旧记录，保留上下文） |
-| `/model` | 查看或切换模型 |
-| `/preset` | 查看当前 preset（固定 `qqchat`，不支持切换） |
-| `/stop` | 中止当前生成 |
-| `/bot-ping` | 网络延迟检测（返回传输与处理耗时） |
-| `/bot-version` | 查看版本信息 |
-| `/bot-status` | 查看当前会话状态 |
-| `/bot-help` | 查看所有指令 |
+| 命令 | 说明 | 权限 |
+|------|------|------|
+| `/new`（别名 `/reset` `/clear`） | 开始新会话（清空上下文） | 主人 |
+| `/compact` | 压缩会话历史（摘要替换旧记录，保留上下文） | 主人 |
+| `/model` | 查看或切换模型 | 主人 |
+| `/preset` | 查看当前 preset（固定 `qqchat`，不支持切换） | 主人 |
+| `/stop` | 中止当前生成 | 主人 |
+| `/bot-status` | 查看当前会话状态 | 主人 |
+| `/whoami` | 查看自己的 openid 与权限 | 所有人 |
+| `/bot-ping` | 网络延迟检测（返回传输与处理耗时） | 所有人 |
+| `/bot-version` | 查看版本信息 | 所有人 |
+| `/bot-help` | 查看所有指令（按权限过滤） | 所有人 |
+
+**命令默认仅限主人**——不显式标注的命令都要求管理员权限，
+避免新增命令时忘记加校验导致意外开放。
+
+主人身份靠 `admin.openids` 白名单配置：平台**不告诉**机器人谁是创建者
+（QQ 机器人 API 没有 owner 概念），所以必须显式配置。第一次配置：
+
+1. 在群里发 `/whoami`，机器人回复你的 openid
+2. 把那串 id 填进 `admin.openids`（设置页或 `cordis.patch.yml`）
+3. 重启 DSH
+
+填之前，高权限命令对**所有人**关闭（安全默认），拒绝文案里会提示上面这几步。
 
 ## 内部机制
 

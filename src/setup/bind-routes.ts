@@ -19,7 +19,7 @@ import {
   type SetupCredentials,
 } from './persist.ts';
 import { getProfileDir } from '../shared/index.ts';
-import { AccessControlSchema, AntiRepeatSchema, PeopleSchema, ProactiveSchema, StickersSchema, REASONING_EFFORT_VALUES as REASONING_EFFORT_VALUES_FROM_CONFIG } from '../config.ts';
+import { AccessControlSchema, AdminSchema, AntiRepeatSchema, PeopleSchema, ProactiveSchema, StickersSchema, REASONING_EFFORT_VALUES as REASONING_EFFORT_VALUES_FROM_CONFIG } from '../config.ts';
 import {
   BIND_CONFIG_PATH,
   BIND_MANUAL_PATH,
@@ -112,7 +112,7 @@ const EDITABLE_CONFIG_KEYS = new Set([
   'requireMention', 'streaming', 'showToolResults', 'debug',
   'provider', 'model', 'preset', 'reasoningEffort',
   'groupPrompt', 'directPrompt',
-  'access', 'proactive', 'people', 'antiRepeat', 'stickers',
+  'access', 'admin', 'proactive', 'people', 'antiRepeat', 'stickers',
   'replyDelayMs', 'replyDelayPerCharMs', 'replyDelayJitterMs', 'replyDelayMaxMs',
 ]);
 
@@ -144,6 +144,7 @@ const EDITABLE_CONFIG_SCHEMAS: Record<string, (value: unknown) => unknown> = {
   groupPrompt: stringSchema('groupPrompt'),
   directPrompt: stringSchema('directPrompt'),
   access: (v) => AccessControlSchema(v as never),
+  admin: (v) => AdminSchema(v as never),
   proactive: (v) => ProactiveSchema(v as never),
   people: (v) => PeopleSchema(v as never),
   antiRepeat: (v) => AntiRepeatSchema(v as never),

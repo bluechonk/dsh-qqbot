@@ -2,12 +2,16 @@
  * /bot-help — 查看所有指令，按「通用能力 / QQ 机器人特有」分组展示
  *
  * 通用能力：对应底层 dsh agent 能力（new/compact/model/stop），无前缀
- * QQBot 特有：插件自身封装（bot-ping/bot-version/bot-status/bot-help），带 bot- 前缀
+ * QQBot 特有：插件自身封装（whoami/bot-ping/bot-version/bot-status/bot-help），带 bot- 前缀
+ *
+ * 按权限**过滤**：非管理员看不到管理员专用命令。
+ * 不这样做的话，普通群友会照着一份自己用不了的清单去试，然后收到一串拒绝。
  */
 import type { CommandDeps, CategorizedCommand } from './types.ts';
 import { sendMarkdownChunked, PLUGIN_VERSION } from '../shared/index.ts';
+import { isAdmin } from '../features/admin/index.ts';
 
-/** /bot-help — 分组查看所有指令 */
+/** /bot-help — 分组查看所有指令（按调用者权限过滤） */
 export function helpCommand(
   { config }: CommandDeps,
   allCommands: () => CategorizedCommand[],
@@ -15,12 +19,16 @@ export function helpCommand(
   return {
     name: 'bot-help',
     category: 'qqbot',
+    adminOnly: false,
     description: '查看所有指令',
     handler: async (cmdCtx) => {
+      const viewerIsAdmin = isAdmin(cmdCtx.message.senderId, config.admin);
       const agentCmds: CategorizedCommand[] = [];
       const qqbotCmds: CategorizedCommand[] = [];
       for (const cmd of allCommands()) {
         if (cmd.hidden) continue;
+        // 非管理员看不到管理员专用命令
+        if (cmd.adminOnly !== false && !viewerIsAdmin) continue;
         (cmd.category === 'agent' ? agentCmds : qqbotCmds).push(cmd);
       }
 
@@ -40,6 +48,10 @@ export function helpCommand(
       }
       if (qqbotCmds.length > 0) {
         lines.push('**插件内置指令**', '', ...render(qqbotCmds), '');
+      }
+
+      if (!viewerIsAdmin) {
+        lines.push('> 部分指令仅限主人使用。发送 `/whoami` 查看自己的权限。', '');
       }
 
       lines.push('', `> dsh-qqbot v${PLUGIN_VERSION}`);

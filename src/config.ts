@@ -19,6 +19,24 @@ export interface AccessControlConfig {
   groupAllow: string[];
 }
 
+/**
+ * 命令权限配置
+ *
+ * 平台不告诉机器人谁是它的创建者（QQ 机器人 API 没有 owner 概念），
+ * 所以主人身份必须显式配置。
+ */
+export interface AdminConfig {
+  /** 是否启用命令权限校验；关闭时所有人都能执行高权限命令（仅调试用） */
+  enabled: boolean;
+  /**
+   * 管理员 openid 白名单。
+   *
+   * 是 **openid**（如 `EC162542C77F402DC4C07E3735E786A9`），不是 QQ 号——
+   * 平台推给机器人的只有 openid。用 `/whoami` 查看自己的。
+   */
+  openids: string[];
+}
+
 export interface MediaConfig {
   /** 是否启用富媒体理解（图片/视频下载 + 工具分析） */
   enabled: boolean;
@@ -110,6 +128,8 @@ export interface ImQQBotConfig {
   historyLimit: number;
   /** 访问控制 */
   access: AccessControlConfig;
+  /** 命令权限（谁能执行高权限命令） */
+  admin: AdminConfig;
   /** 自主接话（判断是否参与群聊对话） */
   proactive: ProactiveConfig;
   /** 群友档案（记住谁是谁） */
@@ -187,6 +207,12 @@ export const AccessControlSchema: Schema<AccessControlConfig> = Schema.object({
   groupAllow: Schema.array(Schema.string()).default([]).description('群聊白名单'),
 });
 
+/** 命令权限子 Schema */
+export const AdminSchema: Schema<AdminConfig> = Schema.object({
+  enabled: Schema.boolean().default(true).description('启用命令权限校验（关闭则所有人可执行高权限命令）'),
+  openids: Schema.array(Schema.string()).default([]).description('管理员 openid 白名单'),
+}).description('命令权限（谁能执行高权限命令）');
+
 /** 表情包子 Schema */
 export const StickersSchema: Schema<StickersConfig> = Schema.object({
   enabled: Schema.boolean().default(false).description('启用表情包（需先导入图库）'),
@@ -245,6 +271,11 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
     groupMode: 'open',
     groupAllow: [],
   }).description('访问控制'),
+  admin: AdminSchema.default({
+    // 安全默认：先锁上，主人用 /whoami 拿到 openid 再填进来
+    enabled: true,
+    openids: [],
+  }).description('命令权限（谁能执行高权限命令）'),
   proactive: ProactiveSchema.default({
     enabled: true,
     minScore: 0.55,

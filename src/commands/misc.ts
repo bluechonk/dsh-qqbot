@@ -6,12 +6,36 @@
  */
 import type { CommandDeps, CategorizedCommand } from './types.ts';
 import { getScopePeer, PLUGIN_VERSION } from '../shared/index.ts';
+import { buildIdentityMessage } from '../features/admin/index.ts';
+
+/** /whoami — 查看自己的 openid 与权限（开放命令） */
+export function whoamiCommand({ config }: CommandDeps): CategorizedCommand {
+  return {
+    name: 'whoami',
+    category: 'qqbot',
+    adminOnly: false,
+    description: '查看自己的 openid 与权限',
+    usage: [
+      '/whoami',
+      '',
+      '返回你的 openid 与当前权限。',
+      '主人用它可以拿到需要填进 admin.openids 的那串 id。',
+    ].join('\n'),
+    handler: (ctx) => buildIdentityMessage({
+      senderId: ctx.message.senderId,
+      senderName: ctx.message.senderName,
+      admin: config.admin,
+      isGroup: ctx.message.kind === 'group',
+    }),
+  };
+}
 
 /** /bot-ping — 测试当前 dsh 与 QQ 连接的网络延迟 */
 export function pingCommand(): CategorizedCommand {
   return {
     name: 'bot-ping',
     category: 'qqbot',
+    adminOnly: false,
     description: '测试当前 dsh 与 QQ 连接的网络延迟',
     usage: [
       '/bot-ping',
@@ -44,6 +68,7 @@ export function versionCommand({ manager }: CommandDeps): CategorizedCommand {
   return {
     name: 'bot-version',
     category: 'qqbot',
+    adminOnly: false,
     description: '查看版本信息',
     handler: () => {
       const current = manager.getEffectiveModel('c2c', '');
