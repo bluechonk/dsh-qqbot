@@ -39,6 +39,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .agents/skills/qqbot-log-triage/sc
 ~/.dsh-qqbot/
 ├── startup.log              每条 apply() = 一次插件加载
 ├── proactive-scores.jsonl   门控判定（消息到了没有、放行了没有）
+├── middleware-drops.jsonl   中间件链丢弃留痕（drop/denied/merge）
 ├── raw-events.jsonl         SDK 未建模的网关事件（探测平台推不推某类事件）
 ├── people.json              群友档案（**在 handleInbound 内部创建**）
 ├── stickers.json + stickers/ 表情包图库与素材
@@ -51,11 +52,20 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .agents/skills/qqbot-log-triage/sc
 |---|---|---|
 | `startup.log` | 插件 `apply()` | 插件**加载**了 |
 | `proactive-scores.jsonl` | 门控判定时 | 消息**到达门控**了、判定结果是什么 |
+| `middleware-drops.jsonl` | 链上短路 / 合并时 | 消息**被丢弃或合并**了 |
 | `people.json` | **`handleInbound` 内部**（门控之后） | 消息**穿过了整条中间件链** |
 | 会话事件日志 | agent 收到消息时 | 模型**被调用**了 |
 
 **`people.json` 是最有用的分界线**：它比门控晚、比 agent 早。
 门控有记录但 `people.json` 没更新 ⇒ 消息在**门控之后、agent 之前**被丢掉了。
+
+**此时看 `middleware-drops.jsonl` 定位是哪一关丢的**：
+
+| 类别 | 含义 | 常见原因 |
+|---|---|---|
+| `drop` | 消息没进 agent | `deduplication`（重复 messageId）、`access:*`（不在白名单）、`mention-gate:*`（未 @）、`rate-limit:*` |
+| `denied` | 命令被拒 | 非管理员执行了管理员命令（安全审计用） |
+| `merge` | N 条并成 1 轮 | 同一 peer 在上一回合处理期间连发（**设计如此**，内容不丢） |
 
 ## HTTP 路由（插件活着且连上 QQ 的硬证据）
 

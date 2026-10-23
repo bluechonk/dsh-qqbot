@@ -4,7 +4,7 @@ DeepSeek Harness 插件：把 QQ 私聊与群聊接进 dsh，AI 以「大肥鱼�
 
 ## 能力
 
-- **群友式陪聊**：会话固定跑在插件自带的 `qqchat` 预设上，零工具（没有终端、没有文件读写），人格与说话风格由插件内置定义
+- **群友式陪聊**：会话默认跑在插件自带的 `qqchat` 预设上，零工具（没有终端、没有文件读写），人格与说话风格由插件内置定义；支持用 `/preset` 切换到其他预设
 - **自主接话**：群里没人点名她时，由本地词法门控判断这条值不值得接——接不接最后由模型自己决定
 - **沉默是常态**：模型可以回 `[skip]` 表示这一轮不回复，不是每条都接
 - **拟人节奏**：回复带随机延迟（默认 1.2 秒起 + 每字 80ms + 抖动），不秒回
@@ -101,6 +101,7 @@ pnpm build     # tsc（宿主半 → dist/）&& tsdown（浏览器半 → lib/cl
 | `showToolResults` | boolean | `false` | 是否展示工具调用成功结果（错误始终展示） |
 | `debug` | boolean | `false` | 调试模式 |
 | `rawEventLog` | boolean | `true` | 记录未知网关事件到 `~/.dsh-qqbot/raw-events.jsonl`（用于探测平台是否推送某类事件，如「戳一戳」） |
+| `middlewareLog` | boolean | `true` | 记录中间件链丢弃到 `~/.dsh-qqbot/middleware-drops.jsonl`（去重/门控/限流/并发合并的留痕） |
 | `provider` | string | - | LLM 提供商名称，留空继承宿主默认 |
 | `model` | string | - | 模型名称，留空继承宿主默认 |
 | `reasoningEffort` | `off`/`low`/`medium`/`high`/`max` | - | 思考强度，留空由宿主决定（qqchat 建议 `off`） |
@@ -248,15 +249,18 @@ profile  <DSH_HOME>/profiles/<profile>/cordis.patch.yml   # im-qqbot 条目
 pnpm install
 pnpm build              # tsc + tsdown
 pnpm typecheck:client   # 浏览器半的类型检查（主 tsconfig 不覆盖 src/client）
-pnpm test               # vitest：170 个用例
+pnpm test               # vitest：397 个用例
 ```
 
 文档：
 
+- [docs/README.md](docs/README.md) —— 文档总索引（含排查入口）
+- [docs/版本控制.md](docs/版本控制.md) —— 分支模型、提交规范、推送门禁
 - [docs/内部机制.md](docs/内部机制.md) —— 架构与实现要点
 - [docs/自主接话.md](docs/自主接话.md) —— 判定与开口的设计
 - [docs/拟人化路线图.md](docs/拟人化路线图.md) —— 拟人化能力清单与规划
 - [docs/多机器人.md](docs/多机器人.md) —— 多账号接入方案
+- [docs/验收清单.md](docs/验收清单.md) —— 人工验收步骤
 
 ## 许可证
 

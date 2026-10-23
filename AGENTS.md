@@ -58,6 +58,20 @@ node session-log.mjs range '<目标>' 84 95       # 某段完整事件
 比门控晚、比 agent 早。门控有记录但 `people.json` 没更新
 ⇒ 消息在门控之后、agent 之前被丢掉了。
 
+### 3. 中间件链丢弃留痕 —— 上面那条分界线的补充
+
+「门控有记录但档案没更新」曾经无法进一步定位，因为**链上其他关卡丢弃时纹丝不动**。
+现在有 `~/.dsh-qqbot/middleware-drops.jsonl`：
+
+| 类别 | 含义 |
+|---|---|
+| `drop` | 消息被丢掉，没进 agent（去重 / 访问控制 / @ 门控 / 限流） |
+| `denied` | 命令被拒（越权，安全审计） |
+| `merge` | N 条消息并成 1 轮（内容不丢，但没有各自的回合） |
+
+排查顺序：`proactive-scores.jsonl` 有记录 → 看 `middleware-drops.jsonl`
+→ 有 `drop`/`merge` 就是链上丢的；没有则是下游（agent / 出站）的问题。
+
 ## 改完代码怎么生效
 
 **必须重启宿主应用**，不是重载插件：
@@ -74,6 +88,18 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/restart-dsh.ps1
 
 脚本会等 `startup.log` 出现新的 `apply()` 才算成功——
 **「进程起来了」不等于「插件加载了」**。
+
+## 版本控制与协作
+
+分支模型、提交规范、什么时候开 PR、上游同步、回滚方式
+全部写在 [docs/版本控制.md](docs/版本控制.md)，**改代码前先读它**。
+
+这里只强调三条最容易踩的：
+
+1. `main` 是**单根提交**（重建仓库，不带官方 commit 历史），
+   与 `upstream/main` **没有共同祖先** → 不能 `merge` / `rebase` 上游，只能手工搬运
+2. 提交信息先写 `.tmp/commit-msg.txt`，再 `git commit -F`（见下节）
+3. 大改造（跨模块 / 动契约 / 预计 > 20 文件）**先开分支 + 出方案**，不直推 `main`
 
 ## 开发约定
 
@@ -159,6 +185,8 @@ pnpm test               # vitest
 
 | 文档 | 内容 |
 |---|---|
+| [docs/README.md](docs/README.md) | 文档总索引（含排查入口） |
+| [docs/版本控制.md](docs/版本控制.md) | 分支模型、提交规范、推送门禁、上游同步 |
 | [docs/交接.md](docs/交接.md) | **接手必读**：当前状态、待做工作、环境事实、踩坑结论 |
 | [README.md](README.md) | 安装、配置、命令 |
 | [docs/内部机制.md](docs/内部机制.md) | 中间件链、数据目录、开发模式 |
