@@ -48,14 +48,14 @@ export function pingCommand(): CategorizedCommand {
       const ts = ctx.message.timestamp;
       const eventTime = ts ? new Date(ts).getTime() : NaN;
       if (Number.isNaN(eventTime)) {
-        return '✅ pong!';
+        return 'pong!';
       }
       const totalMs = now - eventTime;
       const qqToPlugin = ctx.receivedAt - eventTime;
       const pluginProcess = now - ctx.receivedAt;
       return [
-        '✅ pong！',
-        `⏱ 延迟: ${totalMs}ms`,
+        'pong！',
+        `延迟: ${totalMs}ms`,
         `  ├ 网络传输: ${qqToPlugin}ms`,
         `  └ 插件处理: ${pluginProcess}ms`,
       ].join('\n');
@@ -96,7 +96,7 @@ export function stopCommand({ manager }: CommandDeps): CategorizedCommand {
       // cancel 会让当前轮以 turn/end (kind=interrupted) 收尾，
       // 出站侧据此 flush 已生成的文本并关闭流式会话。
       record.agent.cancel({ kind: 'user' });
-      return '已中止 ⛔';
+      return '已中止';
     },
   };
 }

@@ -48,7 +48,7 @@ export function helpCommand(
         return out;
       };
 
-      const lines: string[] = ['### 🤖 QQ 机器人指令', ''];
+      const lines: string[] = ['### QQ 机器人指令', ''];
 
       if (agentCmds.length > 0) {
         lines.push('**通用能力**', '', ...render(agentCmds), '');
