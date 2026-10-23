@@ -10,6 +10,7 @@ import type { Logger } from '../types.ts';
 import { chunkMarkdownText } from './chunker.ts';
 import { computeRemainingDelay, computeReplyDelay, sleep } from './reply-delay.ts';
 import { isSkipReply } from '../shared/skip-marker.ts';
+import { getReplyHistory } from '../features/anti-repeat/index.ts';
 import { OutboundBuffer, type QQBotSender } from './outbound-buffer.ts';
 import { formatToolResult, type ToolsRegistryLike, type ToolResultData } from './tool-presenter.ts';
 import {
@@ -276,12 +277,18 @@ class OutboundRouter {
   ): Promise<void> {
     if (mimicDelay) await this.delayBeforeSend(record.sessionId, text);
     const chunks = chunkMarkdownText(text, this.config.textChunkLimit);
+    let sentAny = false;
     for (const chunk of chunks) {
       try {
         await this.bot.sendMarkdown(record.replyTarget, chunk);
+        sentAny = true;
       } catch (err) {
         this.logger.error(`im-qqbot: ${tag} failed: ${err instanceof Error ? err.message : String(err)}`);
       }
+    }
+    // 防复读：只记**真正发出去的正常回复**（工具结果/错误提示不算她的话）
+    if (mimicDelay && sentAny && this.config.antiRepeat.enabled) {
+      getReplyHistory().record(record.sessionKey, text);
     }
   }
 

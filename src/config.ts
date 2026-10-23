@@ -114,6 +114,8 @@ export interface ImQQBotConfig {
   proactive: ProactiveConfig;
   /** 群友档案（记住谁是谁） */
   people: PeopleConfig;
+  /** 防复读（别把自己变成复读机） */
+  antiRepeat: AntiRepeatConfig;
   /** 是否展示工具调用成功结果（工具错误始终展示） */
   showToolResults: boolean;
   /** 调试模式 */
@@ -131,6 +133,14 @@ export interface ImQQBotConfig {
   vision: VisionConfig;
   /** 附件发送（qqbot_send_file 工具） */
   sendFile: SendFileConfig;
+}
+
+/** 防复读配置 */
+export interface AntiRepeatConfig {
+  /** 是否启用防复读（把「你最近说过」前置给模型） */
+  enabled: boolean;
+  /** 记住自己最近几条发言 */
+  historySize: number;
 }
 
 /** 群友档案配置 */
@@ -164,6 +174,12 @@ export const AccessControlSchema: Schema<AccessControlConfig> = Schema.object({
   groupMode: Schema.union(['open', 'allowlist', 'disabled']).default('open').description('群聊访问模式'),
   groupAllow: Schema.array(Schema.string()).default([]).description('群聊白名单'),
 });
+
+/** 防复读子 Schema */
+export const AntiRepeatSchema: Schema<AntiRepeatConfig> = Schema.object({
+  enabled: Schema.boolean().default(true).description('启用防复读（把「你最近说过」前置给模型）'),
+  historySize: Schema.number().default(5).description('记住自己最近几条发言'),
+}).description('防复读（别把自己变成复读机）');
 
 /** 群友档案子 Schema */
 export const PeopleSchema: Schema<PeopleConfig> = Schema.object({
@@ -222,6 +238,10 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
     enabled: true,
     maxAliases: 2,
   }).description('群友档案（记住谁是谁）'),
+  antiRepeat: AntiRepeatSchema.default({
+    enabled: true,
+    historySize: 5,
+  }).description('防复读（别把自己变成复读机）'),
   showToolResults: Schema.boolean().default(false).description('是否展示工具调用成功结果（错误始终展示）'),
   debug: Schema.boolean().default(false),
   rawEventLog: Schema.boolean().default(true).description(

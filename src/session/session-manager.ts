@@ -336,7 +336,7 @@ export class SessionManager {
 
   // ── Session 生命周期管理 ──
 
-  private sessionKey(scope: ChatScope, peerId: string): string {
+  sessionKey(scope: ChatScope, peerId: string): string {
     return `qqbot:${this.config.appId}:${scope}:${peerId}`;
   }
 

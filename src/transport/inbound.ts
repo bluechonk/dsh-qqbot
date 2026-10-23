@@ -21,6 +21,7 @@ import {
 } from './attachment.ts';
 import { clearGroupHistory } from '../features/history-store.ts';
 import { buildProfileLine, extractAlias, PeopleStore } from '../features/people/index.ts';
+import { buildRecentRepliesLine, getReplyHistory } from '../features/anti-repeat/index.ts';
 import { pluginDataPath } from '../shared/index.ts';
 import type { ProactiveDecision } from '../features/proactive/types.ts';
 import type { MiddlewareContext } from '@tencent-connect/qqbot-nodejs';
@@ -145,8 +146,19 @@ export async function handleInbound(
     maxAliases: config.people.maxAliases,
   });
 
+  // ── 防复读：把「你最近说过什么」前置，让模型自己换说法 ──
+  // 走预防而不是事后纠正——后者要多跑一轮模型，陪聊场景对延迟很敏感。
+  const replyKey = manager.sessionKey(scope, peerId);
+  const recentLine = config.antiRepeat.enabled
+    ? buildRecentRepliesLine(
+        getReplyHistory(config.antiRepeat.historySize).list(replyKey),
+      )
+    : '';
+
   // ── 组装 agentBody（下载结果经 mwState.downloadedFiles 提供） ──
-  const agentBody = assembleAgentBody(msg, mwState, scope, logger, profileLine);
+  const agentBody = assembleAgentBody(
+    msg, mwState, scope, logger, `${profileLine}${recentLine}`,
+  );
 
   if (!agentBody) return;
 
@@ -203,7 +215,7 @@ function assembleAgentBody(
   state: MiddlewareState,
   scope: ChatScope,
   logger: Logger,
-  profileLine = '',
+  prefixHints = '',
 ): string | null {
   const isGroup = scope === 'group';
   const wasMentioned = state.mention?.wasMentioned ?? false;
@@ -217,8 +229,8 @@ function assembleAgentBody(
 
   const dynamicCtx = buildDynamicCtx(msg, state);
 
-  // 前置旁白：先「你是谁」（群友档案），再「这条为什么值得接」（自主接话）
-  const hints = `${profileLine}${buildProactiveHint(state.proactive)}`;
+  // 前置旁白：先「你是谁」（群友档案）+「你说过什么」（防复读），再「这条为什么值得接」
+  const hints = `${prefixHints}${buildProactiveHint(state.proactive)}`;
 
   const inner = dynamicCtx ? `${dynamicCtx}${userMessage}` : userMessage;
   const base = hints ? `${hints}${inner}` : inner;
