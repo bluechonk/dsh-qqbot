@@ -26,7 +26,6 @@ import type {
   SessionEventLike,
   DshAgent,
   DshAgentHandle,
-  SessionsService,
   DshAgentRegistry,
   AgentPresetsLike,
   PresetComposition,
@@ -140,17 +139,6 @@ export class SessionManager {
   }
 
   /**
-   * 动态获取 sessions 服务（fork 能力，可选）
-   */
-  private getSessionsService(): SessionsService | undefined {
-    try {
-      return this.ctx.get('sessions') as SessionsService | undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  /**
    * 动态获取 agentPresets 服务（可选，未注入时返回 undefined）
    */
   private getPresetsService(): AgentPresetsLike | undefined {
@@ -212,20 +200,17 @@ export class SessionManager {
   ): Promise<void> {
     const key = record.sessionKey;
 
-    const sessionsService = this.getSessionsService();
-    if (!sessionsService) {
-      this.logger.warn(`fork unavailable, fallback to dispose: key=${key}`);
-      this.sessions.delete(key);
-      record.agent.cancel({ kind: 'user' });
-      await record.handle.dispose().catch(() => {});
-      return;
-    }
-
-    let seed: readonly unknown[];
-    try {
-      seed = sessionsService.fork(record.agent.session).events;
-    } catch (err) {
-      this.logger.warn(`fork failed, fallback to dispose: key=${key} err=${err instanceof Error ? err.message : String(err)}`);
+    // 直接取源会话的事件作为新会话 seed。
+    //
+    // ⚠️ 不能再用 `sessions.fork(source).events`：
+    //   1. DSH 的 `fork()` 返回的是**新建的子会话对象**（`@returns The created
+    //      live child session.`），不是 `{ events }`。按旧契约读 `.events`
+    //      得到 undefined，`seed.length` 会抛
+    //      "Cannot read properties of undefined (reading 'length')"。
+    //   2. 它每次调用都会**真的建一个会话**，拿来当数据源会留下孤儿会话。
+    const seed = snapshotSessionEvents(record.agent.session);
+    if (seed === undefined) {
+      this.logger.warn(`session events unavailable, fallback to dispose: key=${key}`);
       this.sessions.delete(key);
       record.agent.cancel({ kind: 'user' });
       await record.handle.dispose().catch(() => {});
@@ -568,4 +553,33 @@ function extractMessageText(
     }
   }
   return parts.join('\n').trim();
+}
+
+/**
+ * 取会话当前事件快照，作为新会话 seed。
+ *
+ * 优先 `snapshotEvents()`（DSH Session 的官方读法，fork 内部也用它），
+ * 退化到 `.events` 属性（旧宿主）。两者都拿不到返回 undefined，
+ * 由调用方降级为「丢弃会话、下次消息重建」。
+ *
+ * 单独抽出来是因为这里最容易踩 DSH 的版本差异坑：
+ * `sessions.fork()` 返回的是**子会话对象**而不是事件数组。
+ */
+export function snapshotSessionEvents(session: unknown): readonly unknown[] | undefined {
+  if (session === null || typeof session !== 'object') return undefined;
+  const candidate = session as {
+    snapshotEvents?: () => unknown;
+    events?: unknown;
+  };
+
+  try {
+    if (typeof candidate.snapshotEvents === 'function') {
+      const snapshot = candidate.snapshotEvents();
+      if (Array.isArray(snapshot)) return snapshot;
+    }
+  } catch {
+    /* 落到下面继续尝试 */
+  }
+
+  return Array.isArray(candidate.events) ? candidate.events : undefined;
 }

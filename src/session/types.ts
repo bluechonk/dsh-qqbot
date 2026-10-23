@@ -25,9 +25,11 @@ export interface DshAgent {
   readonly ctx: Context;
   /** 当前生命周期状态（用于判断是否正在生成） */
   readonly status: 'idle' | 'running';
-  /** 底层 session（fork 时作为 source，events 用于统计/导出） */
+  /** 底层 session（切模型时取其事件作为新会话 seed） */
   readonly session: {
     readonly id: string;
+    /** DSH Session 的官方读法（fork 内部也用它）；优先于 events */
+    snapshotEvents?(): unknown;
     readonly events?: readonly SessionEventLike[];
   };
   cancel(cause: { kind: string }): void;
@@ -74,9 +76,20 @@ export interface DshAgentHandle {
   dispose(): Promise<void>;
 }
 
-/** sessions 服务（fork 能力） */
+/**
+ * sessions 服务（fork 能力）
+ *
+ * ⚠️ DSH 的 `fork(source, boundary?, childSessionId?)` 返回的是**新建的子会话
+ * 对象**（源码注释：`@returns The created live child session.`），
+ * **不是** `{ events }`。早期契约写成 `{ events }` 会导致读 `.events` 得到
+ * undefined，进而在 `seed.length` 处抛
+ * "Cannot read properties of undefined (reading 'length')"。
+ *
+ * 切模型需要事件快照时，请直接读 `agent.session.snapshotEvents()`，
+ * 不要借 `fork()` —— 它每次调用都会真的建一个会话，留下孤儿。
+ */
 export interface SessionsService {
-  fork(source: unknown, boundary?: number): { events: readonly unknown[] };
+  fork(source: unknown, boundary?: number, childSessionId?: string): unknown;
 }
 
 export interface DshAgentRegistry {
