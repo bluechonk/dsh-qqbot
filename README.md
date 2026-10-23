@@ -96,6 +96,9 @@ pnpm build     # tsc（宿主半 → dist/）&& tsdown（浏览器半 → lib/cl
 
 | 配置 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
+| `settingsNs` | string | `im-qqbot` | 实例命名空间（多机器人时每实例唯一，决定路由/数据目录） |
+| `botName` | string | - | 实例显示名（页面上区分多个机器人） |
+| `enabled` | boolean | `true` | 是否启用该实例（停用则不建连接、不响应消息） |
 | `requireMention` | boolean | `false` | 群聊是否必须 @ 机器人才回应（自主接话开启时由判定接管） |
 | `streaming` | boolean | `false` | 是否启用流式输出（群聊始终不启用） |
 | `showToolResults` | boolean | `false` | 是否展示工具调用成功结果（错误始终展示） |
@@ -229,7 +232,8 @@ profile  <DSH_HOME>/profiles/<profile>/cordis.patch.yml   # im-qqbot 条目
 
 ## 已知限制
 
-- 目前**只支持一个** QQ 机器人；多账号的方案见 [docs/多机器人.md](docs/多机器人.md)（未实现）
+- 支持**多个** QQ 机器人（在 profile patch 里加多行插件行，每行一个 `settingsNs`）；
+  增删启停见 [docs/多机器人.md](docs/多机器人.md)。单实例行为与之前逐字一致
 - **主动开口受平台配额限制**：QQ 的被动回复只有约 5 分钟窗口，超时只能走「主动消息」，
   而主动消息有按群按月的配额。所以「冷场起话题」只做到**判断时机**
   （`features/idle-topic/`），真正发消息待配额确认
