@@ -120,6 +120,9 @@ pnpm build     # tsc（宿主半 → dist/）&& tsdown（浏览器半 → lib/cl
 | `people.maxAliases` | number | `2` | 注入提示时最多带几个别名 |
 | `antiRepeat.enabled` | boolean | `true` | 防复读（把「你最近说过」前置给模型） |
 | `antiRepeat.historySize` | number | `5` | 记住自己最近几条发言 |
+| `stickers.enabled` | boolean | `false` | 表情包（需先导入图库，见 `docs/表情包.md`） |
+| `stickers.maxTextReplies` | number | `3` | 连续多少条纯文字后才允许配一个表情 |
+| `stickers.cooldownMs` | number | `600000` | 同一张表情的冷却时间（ms） |
 | `replyDelayMs` | number | `1200` | 回复延迟基础值（ms），0 = 关闭 |
 | `replyDelayPerCharMs` | number | `80` | 回复延迟每字增量（ms） |
 | `replyDelayJitterMs` | number | `1500` | 回复延迟随机抖动上限（ms） |

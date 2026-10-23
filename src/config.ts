@@ -116,6 +116,8 @@ export interface ImQQBotConfig {
   people: PeopleConfig;
   /** 防复读（别把自己变成复读机） */
   antiRepeat: AntiRepeatConfig;
+  /** 表情包（插件自主配图） */
+  stickers: StickersConfig;
   /** 是否展示工具调用成功结果（工具错误始终展示） */
   showToolResults: boolean;
   /** 调试模式 */
@@ -133,6 +135,16 @@ export interface ImQQBotConfig {
   vision: VisionConfig;
   /** 附件发送（qqbot_send_file 工具） */
   sendFile: SendFileConfig;
+}
+
+/** 表情包配置 */
+export interface StickersConfig {
+  /** 是否启用（默认关：图库为空时无意义，且发送链路未接） */
+  enabled: boolean;
+  /** 连续多少条纯文字后才允许配一个表情 */
+  maxTextReplies: number;
+  /** 同一张表情的冷却时间(ms) */
+  cooldownMs: number;
 }
 
 /** 防复读配置 */
@@ -174,6 +186,13 @@ export const AccessControlSchema: Schema<AccessControlConfig> = Schema.object({
   groupMode: Schema.union(['open', 'allowlist', 'disabled']).default('open').description('群聊访问模式'),
   groupAllow: Schema.array(Schema.string()).default([]).description('群聊白名单'),
 });
+
+/** 表情包子 Schema */
+export const StickersSchema: Schema<StickersConfig> = Schema.object({
+  enabled: Schema.boolean().default(false).description('启用表情包（需先导入图库）'),
+  maxTextReplies: Schema.number().default(3).description('连续多少条纯文字后才允许配一个表情'),
+  cooldownMs: Schema.number().default(600000).description('同一张表情的冷却时间(ms)'),
+}).description('表情包（插件自主配图）');
 
 /** 防复读子 Schema */
 export const AntiRepeatSchema: Schema<AntiRepeatConfig> = Schema.object({
@@ -242,6 +261,11 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
     enabled: true,
     historySize: 5,
   }).description('防复读（别把自己变成复读机）'),
+  stickers: StickersSchema.default({
+    enabled: false,
+    maxTextReplies: 3,
+    cooldownMs: 600_000,
+  }).description('表情包（插件自主配图）'),
   showToolResults: Schema.boolean().default(false).description('是否展示工具调用成功结果（错误始终展示）'),
   debug: Schema.boolean().default(false),
   rawEventLog: Schema.boolean().default(true).description(
