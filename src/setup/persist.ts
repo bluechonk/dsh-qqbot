@@ -15,6 +15,9 @@ export interface SetupCredentials {
   appSecret: string;
 }
 
+/** 默认 patch 条目 id（单实例；多实例时每实例一个，如 `im-qqbot-1`） */
+export const DEFAULT_PATCH_ENTRY_ID = 'im-qqbot';
+
 /** cordis.patch.yml 中的 patch 条目 */
 interface PatchEntry {
   id?: string;
@@ -33,6 +36,7 @@ export function persistCredentialsToProfile(
   credentials: SetupCredentials,
   profileDir?: string,
   logger?: { info(msg: string, ...args: unknown[]): void; warn(msg: string, ...args: unknown[]): void },
+  entryId: string = DEFAULT_PATCH_ENTRY_ID,
 ): boolean {
   const log = logger ?? console;
   const dir = profileDir;
@@ -51,8 +55,8 @@ export function persistCredentialsToProfile(
       entries = parsePatchEntries(readFileSync(patchPath, 'utf8'));
     }
 
-    // 2. 查找已有 im-qqbot 条目
-    const existing = entries.find((e) => e.id === 'im-qqbot');
+    // 2. 查找已有条目（多实例时每实例一个 id）
+    const existing = entries.find((e) => e.id === entryId);
 
     if (existing) {
       // 更新已有条目的 config
@@ -64,7 +68,7 @@ export function persistCredentialsToProfile(
     } else {
       // 追加新条目
       entries.push({
-        id: 'im-qqbot',
+        id: entryId,
         config: {
           appId: credentials.appId,
           appSecret: credentials.appSecret,
@@ -97,6 +101,7 @@ export function persistCredentialsToProfile(
 export function removeCredentialsFromProfile(
   profileDir?: string,
   logger?: { info(msg: string, ...args: unknown[]): void; warn(msg: string, ...args: unknown[]): void },
+  entryId: string = DEFAULT_PATCH_ENTRY_ID,
 ): boolean {
   const log = logger ?? console;
   if (!profileDir) {
@@ -109,7 +114,7 @@ export function removeCredentialsFromProfile(
     if (!existsSync(patchPath)) return true; // 无 patch 文件 = 无凭据，幂等成功
 
     const entries = parsePatchEntries(readFileSync(patchPath, 'utf8'));
-    const entry = entries.find((e) => e.id === 'im-qqbot');
+    const entry = entries.find((e) => e.id === entryId);
     if (entry?.config !== undefined) {
       delete entry.config.appId;
       delete entry.config.appSecret;
@@ -142,6 +147,7 @@ export function updateProfileConfig(
   configPatch: Record<string, unknown>,
   profileDir?: string,
   logger?: { info(msg: string, ...args: unknown[]): void; warn(msg: string, ...args: unknown[]): void },
+  entryId: string = DEFAULT_PATCH_ENTRY_ID,
 ): boolean {
   const log = logger ?? console;
   if (!profileDir) {
@@ -157,7 +163,7 @@ export function updateProfileConfig(
       entries = parsePatchEntries(readFileSync(patchPath, 'utf8'));
     }
 
-    const entry = entries.find((e) => e.id === 'im-qqbot');
+    const entry = entries.find((e) => e.id === entryId);
     if (entry !== undefined) {
       const existing = (entry.config ?? {}) as Record<string, unknown>;
       // 只覆盖提交键；appId/appSecret 由绑定流程管理，防御性保留
@@ -169,7 +175,7 @@ export function updateProfileConfig(
       entry.config = next;
     } else {
       const { appId: _a, appSecret: _s, ...rest } = configPatch;
-      entries.push({ id: 'im-qqbot', config: rest });
+      entries.push({ id: entryId, config: rest });
     }
 
     mkdirSync(profileDir, { recursive: true });
