@@ -173,8 +173,11 @@ if (Test-Path $people) {
         Good "已记录 $($keys.Count) 人"
         foreach ($k in $keys | Select-Object -First 5) {
             $p = $j.people.$k
+            # name 是可选字段：私聊没有群成员表，取不到昵称就不会写。
+            # StrictMode Latest 下读不存在的属性会抛错，整段档案被 catch 吞掉。
+            $name = if ($p.PSObject.Properties.Name -contains 'name') { $p.name } else { '<未取到昵称>' }
             Note "$k"
-            Note "    name=$($p.name)  aliases=[$($p.aliases -join ',')]  count=$($p.count)"
+            Note "    name=$name  aliases=[$($p.aliases -join ',')]  count=$($p.count)"
         }
     } catch {
         Bad "解析失败：$($_.Exception.Message)"
