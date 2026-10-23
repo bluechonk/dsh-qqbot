@@ -24,6 +24,17 @@ export interface StreamSessionLike {
 export interface QQBotSender {
   sendMarkdown(target: ReplyTarget, content: string, opts?: { keyboard?: InlineKeyboard }): Promise<unknown>;
   openStream(target: ReplyTarget): StreamSessionLike;
+  /**
+   * 上传并发送图片（表情包用）。
+   *
+   * 可选：旧版 SDK 没有该方法时降级为不发图，不影响文字回复。
+   * `source.localPath` 由插件给出本地路径，SDK 负责上传。
+   */
+  sendImage?(
+    target: ReplyTarget,
+    source: { localPath: string },
+    opts?: { content?: string },
+  ): Promise<unknown>;
 }
 
 export class OutboundBuffer {

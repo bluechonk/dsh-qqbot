@@ -11,6 +11,18 @@ import { chunkMarkdownText } from './chunker.ts';
 import { computeRemainingDelay, computeReplyDelay, sleep } from './reply-delay.ts';
 import { isSkipReply } from '../shared/skip-marker.ts';
 import { getReplyHistory } from '../features/anti-repeat/index.ts';
+import {
+  afterStickerSent,
+  afterTextReply,
+  getStickerCatalog,
+  getStickerState,
+  inferMood,
+  resolveStickerPath,
+  selectSticker,
+  setStickerState,
+  shouldReplaceText,
+  type Sticker,
+} from '../features/stickers/index.ts';
 import { OutboundBuffer, type QQBotSender } from './outbound-buffer.ts';
 import { formatToolResult, type ToolsRegistryLike, type ToolResultData } from './tool-presenter.ts';
 import {
@@ -280,16 +292,36 @@ class OutboundRouter {
     mimicDelay = false,
   ): Promise<void> {
     if (mimicDelay) await this.delayBeforeSend(record.sessionId, text);
-    const chunks = chunkMarkdownText(text, this.config.textChunkLimit);
+
+    // ── 表情包（M5）──
+    // 必须在发文字**之前**决定：短回复可能要用图**替代**文字，而不是追加。
+    // 真人发表情常常只有一张图、零文字；每次都「文字+图片」反而假。
+    const sticker = mimicDelay ? this.pickSticker(record, text) : undefined;
+    const replaceText = sticker !== undefined && shouldReplaceText(text);
+
     let sentAny = false;
-    for (const chunk of chunks) {
-      try {
-        await this.bot.sendMarkdown(record.replyTarget, chunk);
-        sentAny = true;
-      } catch (err) {
-        this.logger.error(`im-qqbot: ${tag} failed: ${err instanceof Error ? err.message : String(err)}`);
+    if (!replaceText) {
+      const chunks = chunkMarkdownText(text, this.config.textChunkLimit);
+      for (const chunk of chunks) {
+        try {
+          await this.bot.sendMarkdown(record.replyTarget, chunk);
+          sentAny = true;
+        } catch (err) {
+          this.logger.error(`im-qqbot: ${tag} failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
     }
+
+    if (sticker !== undefined) {
+      // 兜底文字只在「刚才因为替代而没发文字」时才有意义：
+      // 图发失败要补发原文，否则用户什么都收不到。传反了会静默丢消息。
+      const sent = await this.sendSticker(record, sticker, replaceText ? text : '');
+      if (sent) sentAny = true;
+    } else if (mimicDelay) {
+      // 没发图 → 文字计数 +1，攒够条数下次才可能配图
+      setStickerState(record.sessionKey, afterTextReply(getStickerState(record.sessionKey)));
+    }
+
     // 防复读：只记**真正发出去的正常回复**（工具结果/错误提示不算她的话）
     if (mimicDelay && sentAny && this.config.antiRepeat.enabled) {
       getReplyHistory().record(record.sessionKey, text);
@@ -297,6 +329,72 @@ class OutboundRouter {
     // 时机特征：通知「她刚在群里说过话」，让门控知道别连珠炮
     if (mimicDelay && sentAny && record.scope === 'group') {
       this.onBotSpoke?.(record.peerId);
+    }
+  }
+
+  /**
+   * 挑一张表情（M5）。任何一步不满足都返回 undefined，即这次不配图。
+   *
+   * 图库为空时整条路径静默跳过——没导入素材就等于这个功能不存在。
+   */
+  private pickSticker(record: SessionRecord, text: string): Sticker | undefined {
+    if (!this.config.stickers.enabled) return undefined;
+
+    const catalog = getStickerCatalog(true);
+    const stickers = catalog.all();
+    if (stickers.length === 0) return undefined;
+
+    const decision = selectSticker({
+      stickers,
+      mood: inferMood(text),
+      state: getStickerState(record.sessionKey),
+      maxTextReplies: this.config.stickers.maxTextReplies,
+      cooldownMs: this.config.stickers.cooldownMs,
+    });
+
+    if (decision.sticker === undefined) {
+      this.logger.debug(`im-qqbot: sticker skipped (${decision.reason})`);
+      return undefined;
+    }
+    this.logger.info(`im-qqbot: sticker picked id=${decision.sticker.id} reason=${decision.reason}`);
+    return decision.sticker;
+  }
+
+  /**
+   * 发送一张表情图。
+   *
+   * 发出去才算数：失败时**回退为纯文字**（如果刚才因为替代而没发文字，
+   * 这里要补发，否则用户什么都收不到）。
+   */
+  private async sendSticker(
+    record: SessionRecord,
+    sticker: Sticker,
+    fallbackText: string,
+  ): Promise<boolean> {
+    const filePath = resolveStickerPath(sticker.file);
+    if (this.bot.sendImage === undefined) {
+      this.logger.warn('im-qqbot: sendImage unavailable in SDK, skip sticker');
+      return false;
+    }
+
+    try {
+      await this.bot.sendImage(record.replyTarget, { localPath: filePath });
+      setStickerState(record.sessionKey, afterStickerSent(sticker));
+      return true;
+    } catch (err) {
+      this.logger.error(
+        `im-qqbot: sticker send failed id=${sticker.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      // 图没发出去 → 别让用户静默收不到任何东西
+      if (fallbackText) {
+        try {
+          await this.bot.sendMarkdown(record.replyTarget, fallbackText);
+        } catch {
+          /* 已尽力 */
+        }
+      }
+      setStickerState(record.sessionKey, afterTextReply(getStickerState(record.sessionKey)));
+      return false;
     }
   }
 

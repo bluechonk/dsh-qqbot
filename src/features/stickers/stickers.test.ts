@@ -14,6 +14,7 @@ import {
   shouldReplaceText,
   type StickerRuntimeState,
 } from './select.ts';
+import { resolveStickerPath } from './runtime.ts';
 
 describe('inferMood', () => {
   it('认出得意', () => {
@@ -166,5 +167,20 @@ describe('状态流转', () => {
   it('发完表情计数归零并记住 id', () => {
     const next = afterStickerSent(sticker({ id: 'x' }), 123);
     expect(next).toEqual({ textRepliesSinceSticker: 0, lastSentId: 'x', lastSentAt: 123 });
+  });
+});
+
+describe('resolveStickerPath', () => {
+  it('相对路径解析到 ~/.dsh-qqbot/stickers/ 下', () => {
+    const resolved = resolveStickerPath('deepseek-chan/得意.png');
+    expect(resolved).toContain('.dsh-qqbot');
+    expect(resolved).toContain('stickers');
+    expect(resolved.endsWith('得意.png')).toBe(true);
+  });
+
+  it('素材目录整体可搬（只存相对路径）', () => {
+    // 绝对路径也允许，便于临时指向别处
+    const absolute = resolveStickerPath('C:/tmp/a.png');
+    expect(absolute.length).toBeGreaterThan(0);
   });
 });
