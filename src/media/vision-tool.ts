@@ -24,6 +24,7 @@ import type {
 } from '@deepseek-ai/dsh-llm';
 import type { VisionConfig } from '../config.ts';
 import type { Logger } from '../types.ts';
+import { sniffImageMediaType } from './image-input.ts';
 
 /** 通过 dsh-llm 的 ImageBlock 间接引用 dsh-attachment 类型，避免直接依赖 dsh-attachment */
 type ImageAttachmentRef = ImageBlock['attachment'];
@@ -61,20 +62,12 @@ const DESCRIPTION =
   + 'instruction (e.g. "transcribe all text", "extract the table as CSV", "translate the text '
   + 'into Chinese") instead of relying on the generic default.';
 
-/** 图片 magic bytes 嗅探 → 标准 MIME（不信声明，安全底线） */
-function sniffImageMediaType(bytes: Uint8Array): ImageMediaType | null {
-  if (bytes.length < 12) return null;
-  // PNG: 89 50 4E 47
-  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
-  // JPEG: FF D8 FF
-  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
-  // GIF: 47 49 46 38
-  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return 'image/gif';
-  // WEBP: 52 49 46 46 .. 57 45 42 50
-  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
-    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp';
-  return null;
-}
+/** 图片 magic bytes 嗅探 → 标准 MIME（不信声明，安全底线）
+ *
+ * 实现放在 `image-input.ts`：入站附图与这个工具都要用同一份嗅探逻辑，
+ * 各写一份必然漂移。
+ */
+export { sniffImageMediaType };
 
 /** 加载图片字节（本地路径 / http URL），校验大小 + 嗅探 MIME */
 async function loadImageBytes(
