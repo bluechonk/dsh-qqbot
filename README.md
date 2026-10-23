@@ -104,7 +104,7 @@ pnpm build     # tsc（宿主半 → dist/）&& tsdown（浏览器半 → lib/cl
 | `showToolResults` | boolean | `false` | 是否展示工具调用成功结果（错误始终展示） |
 | `debug` | boolean | `false` | 调试模式 |
 | `rawEventLog` | boolean | `true` | 记录未知网关事件到 `~/.dsh-qqbot/raw-events.jsonl`（用于探测平台是否推送某类事件，如「戳一戳」） |
-| `middlewareLog` | boolean | `true` | 记录中间件链丢弃到 `~/.dsh-qqbot/middleware-drops.jsonl`（去重/门控/限流/并发合并的留痕） |
+| `middlewareLog` | boolean | `true` | 记录中间件链留痕到 `~/.dsh-qqbot/middleware-events.jsonl`（丢弃/越权/合并/命令处理） |
 | `provider` | string | - | LLM 提供商名称，留空继承宿主默认 |
 | `model` | string | - | 模型名称，留空继承宿主默认 |
 | `reasoningEffort` | `off`/`low`/`medium`/`high`/`max` | - | 思考强度，留空由宿主决定（qqchat 建议 `off`） |
