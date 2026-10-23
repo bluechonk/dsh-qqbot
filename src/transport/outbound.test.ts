@@ -37,6 +37,9 @@ function createRecord(target: ReplyTarget, sessionId = 'sess-qq'): SessionRecord
     sessionKey: 'k',
     sessionId,
     replyTarget: target,
+    // scope / peerId 必须给：blocked 恢复要靠它们定位会话（getOrCreate 里也会设）
+    scope: target.scope,
+    peerId: target.targetId,
     agent: {},
     handle: {},
     createdAt: 0,
@@ -334,6 +337,59 @@ describe('OutboundRouter.routeStreamFrame', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(bot.sendImage).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── blocked 轮次的自动恢复 ──
+  // 真实案例：某群会话连续 8 轮 turn/end{blocked}，模型完全不被调用，
+  // 机器人彻底哑掉且没有任何报错——最难发现的一类故障。
+  describe('blocked 轮次的自动恢复', () => {
+    /** 造一个能记录 remove 调用的 manager */
+    function setupWithRemove() {
+      const session = createSession();
+      const bot = createBot(session);
+      const record = createRecord(groupTarget);
+      const remove = vi.fn().mockResolvedValue(undefined);
+      const manager = {
+        findBySessionId: vi.fn((id: string) => (id === 'sess-qq' ? record : undefined)),
+        remove,
+      } as unknown as SessionManager;
+      const outbound = createOutboundHandler(
+        manager, bot, createConfig({ streaming: false }), createLogger(),
+      );
+      return { outbound, remove };
+    }
+
+    const turnEnd = (reason: unknown) => ({
+      type: 'turn/end',
+      data: { reason },
+    });
+
+    it('blocked → 丢弃会话，让下一条消息重建', async () => {
+      const { outbound, remove } = setupWithRemove();
+      outbound.routeSessionEvent({ header: { id: 'sess-qq' } }, turnEnd({ kind: 'blocked' }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(remove).toHaveBeenCalledWith('group', 'group1');
+    });
+
+    it('completed / error 不触发丢弃', async () => {
+      const { outbound, remove } = setupWithRemove();
+      outbound.routeSessionEvent({ header: { id: 'sess-qq' } }, turnEnd({ kind: 'completed' }));
+      outbound.routeSessionEvent({ header: { id: 'sess-qq' } }, turnEnd({
+        kind: 'error', error: { code: 'SOME_ERROR', message: 'x' },
+      }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it('反复 blocked 时有频率上限，避免重建抖动', async () => {
+      const { outbound, remove } = setupWithRemove();
+      for (let i = 0; i < 10; i++) {
+        outbound.routeSessionEvent({ header: { id: 'sess-qq' } }, turnEnd({ kind: 'blocked' }));
+      }
+      await vi.advanceTimersByTimeAsync(0);
+      // 上限 5 次；超出后只记日志不再重建
+      expect(remove).toHaveBeenCalledTimes(5);
     });
   });
 });

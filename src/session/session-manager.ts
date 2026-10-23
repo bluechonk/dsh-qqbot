@@ -237,6 +237,8 @@ export class SessionManager {
     });
 
     this.modelResolver.setSessionId(key, childId);
+    // 重建出来的会话同样要记 preset，否则下次会被误判为「preset 不对」再丢一次
+    this.modelResolver.setPreset(key, FIXED_PRESET_ID);
 
     const oldHandle = record.handle;
     record.sessionId = childId;
@@ -390,6 +392,22 @@ export class SessionManager {
     }
 
     const route = this.modelResolver.getEffectiveRoute(key);
+
+    // ⚠️ preset 在会话**创建时**就固定了，`agents.resume()` 改不了它
+    //（resume 只接受 agentOptions 与 setup，没有 preset 参数）。
+    // 所以早期用别的 preset 建的会话会**一直**跑错预设。
+    // 实测：有会话一直跑 standard —— 人格完全不生效、还带着 pwsh 等全套工具，
+    // 而它看起来「能回话」，所以极难发现。
+    // 这里发现记录不一致就丢弃会话，让下面重新建一个正确 preset 的。
+    const recordedPreset = this.modelResolver.getPreset(key);
+    if (recordedPreset !== FIXED_PRESET_ID) {
+      this.logger.warn(
+        `session preset mismatch (recorded=${recordedPreset ?? 'unknown'}, want=${FIXED_PRESET_ID}); `
+        + `dropping it to rebuild with the right preset: key=${key}`,
+      );
+      this.modelResolver.setSessionId(key, randomUUID());
+    }
+
     const sessionId = SessionId(this.currentSessionId(key));
     this.logger.info(`getOrCreate: key=${key} route=${route ? `${route.provider}/${route.model}` : 'host-default'} sessionId=${sessionId}`);
 
@@ -446,6 +464,9 @@ export class SessionManager {
       lastActivity: Date.now(),
       agentPreset,
     };
+
+    // 记下这个会话用的是哪个 preset，供下次判断要不要丢弃重建
+    this.modelResolver.setPreset(key, FIXED_PRESET_ID);
 
     this.sessions.set(key, record);
     return record;

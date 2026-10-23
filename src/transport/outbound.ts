@@ -68,6 +68,10 @@ interface ToolCallRecord {
 /** 不展示给用户的轮次错误码（底层传输/网络错误，对用户无意义，且常被重试兜住） */
 const SILENT_TURN_ERROR_CODES = new Set(['STREAM_CLOSED']);
 
+/** blocked 会话的重建频率上限窗口与次数（防「重建后又被 blocked」反复抖动） */
+const BLOCKED_RESET_WINDOW_MS = 10 * 60 * 1000;
+const BLOCKED_RESET_MAX = 5;
+
 /**
  * 出站路由器：持有会话级状态，按事件类型分发到处理器
  */
@@ -91,6 +95,8 @@ class OutboundRouter {
   private readonly toolsRegistry: ToolsRegistryLike | undefined;
   /** 机器人发过群消息的通知回调（M1） */
   private readonly onBotSpoke: ((groupId: string) => void) | undefined;
+  /** sessionKey → 最近因 blocked 而重建会话的时刻（防抖动） */
+  private readonly blockedResets = new Map<string, number[]>();
 
   public constructor(
     manager: SessionManager,
@@ -284,7 +290,52 @@ class OutboundRouter {
       void this.send(record, `⚠️ 本轮异常结束\n\`${failure.code}\`: ${failure.message}`, 'sendTurnEndError');
     }
 
+    // ⚠️ blocked：这一轮**根本没跑**（宿主 preStep 直接拒绝），既不产出回复也不报错。
+    // 实测一旦进入 blocked 就**再也不会恢复**——每条消息都只 start→blocked，
+    // 机器人彻底哑掉且无人知晓（真实案例：某会话连续 8 轮 blocked）。
+    // 对策：丢弃该会话，让下一条消息重建一个干净的。
+    if (event.reason?.kind === 'blocked') {
+      this.handleBlockedTurn(record);
+    }
+
     this.logger.debug(`im-qqbot: turn/end sessionId=${sessionId}`);
+  }
+
+  /**
+   * 处理 blocked 轮次：丢弃会话以便下次重建。
+   *
+   * 为什么敢直接丢：blocked 意味着这一轮**什么都没产出**，不存在「丢掉半截回复」的问题；
+   * 代价只是会话上下文（历史）丢失，而相比之下「永久哑掉」严重得多。
+   *
+   * 带频率上限是防「重建后又被 blocked」时陷入反复重建的抖动。
+   */
+  private handleBlockedTurn(record: SessionRecord): void {
+    const now = Date.now();
+    const recent = (this.blockedResets.get(record.sessionKey) ?? [])
+      .filter((at) => now - at < BLOCKED_RESET_WINDOW_MS);
+
+    if (recent.length >= BLOCKED_RESET_MAX) {
+      // 窗口内重建太多次 → 不是偶发，别再抖了，但必须留痕
+      this.logger.error(
+        `im-qqbot: turn blocked ${recent.length + 1} times within `
+        + `${Math.round(BLOCKED_RESET_WINDOW_MS / 60000)}min for key=${record.sessionKey}; `
+        + 'session kept as-is to avoid a reset storm',
+      );
+      this.blockedResets.set(record.sessionKey, recent);
+      return;
+    }
+
+    recent.push(now);
+    this.blockedResets.set(record.sessionKey, recent);
+    this.logger.error(
+      `im-qqbot: turn blocked (no output produced); dropping session so the next message `
+      + `rebuilds it: key=${record.sessionKey} sessionId=${record.sessionId}`,
+    );
+    void this.manager.remove(record.scope, record.peerId).catch((err: unknown) => {
+      this.logger.error(
+        `im-qqbot: failed to drop blocked session: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
   }
 
   /**

@@ -10,6 +10,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { PersonProfile } from './format.ts';
+import type { Logger } from '../../types.ts';
 
 /** 档案文件结构 */
 interface PeopleFile {
@@ -28,11 +29,19 @@ export interface PeopleStoreOptions {
   filePath: string;
   /** 是否启用（关闭则完全不读写） */
   enabled: boolean;
+  /**
+   * 日志（可选，但强烈建议给）。
+   *
+   * 读写失败**必须留痕**：档案是「学到的别名」这类不可再生数据，
+   * 静默失败等于用户永远不知道自己的档案丢了。
+   */
+  logger?: Logger;
 }
 
 export class PeopleStore {
   private readonly filePath: string;
   private readonly enabled: boolean;
+  private readonly logger: Logger | undefined;
   private data: PeopleFile | undefined;
   private dirty = false;
   private lastWrite = 0;
@@ -40,6 +49,7 @@ export class PeopleStore {
   constructor(options: PeopleStoreOptions) {
     this.filePath = options.filePath;
     this.enabled = options.enabled;
+    this.logger = options.logger;
   }
 
   /**
@@ -115,16 +125,60 @@ export class PeopleStore {
       renameSync(tmp, this.filePath);
       this.dirty = false;
       this.lastWrite = now;
-    } catch {
-      /* 写盘失败不影响聊天；下次还会尝试 */
+    } catch (err) {
+      // 写盘失败必须留痕：档案是「学到的别名」这类不可再生数据
+      this.logger?.error(
+        `im-qqbot: people.json write failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
-  /** 懒加载（首次访问读盘，损坏则从空档案重建） */
+  /** 懒加载（首次访问读盘，损坏则保留原文件并从空档案重建） */
   private load(): PeopleFile {
     if (this.data !== undefined) return this.data;
-    this.data = readFile(this.filePath);
+    this.data = this.read();
     return this.data;
+  }
+
+  /**
+   * 读盘。
+   *
+   * ⚠️ 解析失败时**把损坏文件改名保留**，而不是直接返回空档案。
+   * 否则下一次 flush 会用空数据覆盖它，用户的档案永久消失——
+   * 这是「静默数据丢失」最典型的一种。
+   */
+  private read(): PeopleFile {
+    const empty: PeopleFile = { version: 1, people: {} };
+    if (!existsSync(this.filePath)) return empty;
+
+    try {
+      const parsed = JSON.parse(readFileSync(this.filePath, 'utf8')) as Partial<PeopleFile>;
+      if (parsed.version !== 1 || typeof parsed.people !== 'object' || parsed.people === null) {
+        this.quarantine('结构不符合预期');
+        return empty;
+      }
+      return { version: 1, people: parsed.people };
+    } catch (err) {
+      this.quarantine(err instanceof Error ? err.message : String(err));
+      return empty;
+    }
+  }
+
+  /** 把读不动的档案改名留档，避免被后续写入覆盖 */
+  private quarantine(reason: string): void {
+    const backup = `${this.filePath}.corrupt`;
+    try {
+      renameSync(this.filePath, backup);
+      this.logger?.error(
+        `im-qqbot: people.json unreadable (${reason}); kept as ${backup}, starting fresh`,
+      );
+    } catch (err) {
+      // 连改名都失败：至少把原因喊出来，别让人以为档案还在
+      this.logger?.error(
+        `im-qqbot: people.json unreadable (${reason}) and could not be kept: `
+        + `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /** 超过上限时按 lastSeen 淘汰最久未见的 */
@@ -137,20 +191,5 @@ export class PeopleStore {
     for (const key of sorted.slice(0, keys.length - MAX_PEOPLE)) {
       delete file.people[key];
     }
-  }
-}
-
-/** 读取档案文件（不存在/损坏都返回空档案，不让 IO 问题影响聊天） */
-function readFile(filePath: string): PeopleFile {
-  const empty: PeopleFile = { version: 1, people: {} };
-  if (!existsSync(filePath)) return empty;
-  try {
-    const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as Partial<PeopleFile>;
-    if (parsed.version !== 1 || typeof parsed.people !== 'object' || parsed.people === null) {
-      return empty;
-    }
-    return { version: 1, people: parsed.people };
-  } catch {
-    return empty;
   }
 }
