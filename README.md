@@ -118,6 +118,8 @@ pnpm build     # tsc（宿主半 → dist/）&& tsdown（浏览器半 → lib/cl
 | `proactive.observer` | boolean | `true` | 记录判定日志 |
 | `people.enabled` | boolean | `true` | 群友档案（记住昵称、称呼、互动次数） |
 | `people.maxAliases` | number | `2` | 注入提示时最多带几个别名 |
+| `antiRepeat.enabled` | boolean | `true` | 防复读（把「你最近说过」前置给模型） |
+| `antiRepeat.historySize` | number | `5` | 记住自己最近几条发言 |
 | `replyDelayMs` | number | `1200` | 回复延迟基础值（ms），0 = 关闭 |
 | `replyDelayPerCharMs` | number | `80` | 回复延迟每字增量（ms） |
 | `replyDelayJitterMs` | number | `1500` | 回复延迟随机抖动上限（ms） |
