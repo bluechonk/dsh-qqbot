@@ -209,8 +209,12 @@ export async function handleInbound(
 
 /**
  * 组装 agentBody — AI 实际看到的完整上下文
+ *
+ * 导出以便单测：这是「中间件状态 → 模型看到什么」的契约，
+ * 拼接顺序错了（比如档案和防复读粘在一起）模型会误读，
+ * 但不会有任何报错，所以必须有断言守住。
  */
-function assembleAgentBody(
+export function assembleAgentBody(
   msg: ProcessedMessage,
   state: MiddlewareState,
   scope: ChatScope,
