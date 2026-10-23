@@ -149,11 +149,26 @@ export function formatRelativeTime(ts?: number): string {
 }
 
 /**
- * 插件本地数据文件路径（统一落在 ~/.dsh-qqbot/）
+ * 插件本地数据**目录**。
+ *
+ * 多实例时按 `settingsNs` 分目录（`~/.dsh-qqbot/<ns>/`），
+ * 否则群友档案 / 表情包库会被多个机器人共用——它们是不同的"人"，
+ * 对群友的称呼与亲疏应当各自独立。
+ *
+ * 不传 settingsNs 时保持 `~/.dsh-qqbot/`，单实例行为逐字不变。
+ */
+export function pluginDataDir(settingsNs?: string): string {
+  const base = resolve(os.homedir(), '.dsh-qqbot');
+  const ns = settingsNs?.trim();
+  return ns ? resolve(base, ns) : base;
+}
+
+/**
+ * 插件本地数据文件路径（统一落在 ~/.dsh-qqbot/，多实例时再按 ns 分一层）
  *
  * 判定日志、启动留痕、未知事件、群友档案、表情索引都放这里，
  * 便于集中备份与清理。
  */
-export function pluginDataPath(fileName: string): string {
-  return resolve(os.homedir(), '.dsh-qqbot', fileName);
+export function pluginDataPath(fileName: string, settingsNs?: string): string {
+  return resolve(pluginDataDir(settingsNs), fileName);
 }

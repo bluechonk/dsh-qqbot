@@ -79,7 +79,22 @@ export interface SendFileConfig {
  */
 export const FIXED_PRESET_ID = 'qqchat';
 
+/**
+ * 默认实例命名空间（loader 行 id）。
+ *
+ * 多实例时每个实例必须有一个唯一 `settingsNs`：它决定绑定路由路径、
+ * Web 设置分区 id、凭据落盘的 patch 条目 id，以及本地数据目录。
+ * 缺省保持 `im-qqbot`，所以**单实例行为逐字不变**。
+ */
+export const DEFAULT_SETTINGS_NS = 'im-qqbot';
+
 export interface ImQQBotConfig {
+  /** 实例命名空间（多实例时每实例唯一；缺省 `im-qqbot`） */
+  settingsNs?: string;
+  /** 实例显示名（页面上展示，便于区分多个机器人） */
+  botName?: string;
+  /** 是否启用该实例（停用则不建立连接、不响应消息） */
+  enabled?: boolean;
   /** QQ Bot AppID */
   appId: string;
   /** QQ Bot AppSecret */
@@ -254,6 +269,10 @@ export const ProactiveSchema: Schema<ProactiveConfig> = Schema.object({
 }).description('自主接话（判断是否参与群聊对话）');
 
 export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
+  settingsNs: Schema.string().default(DEFAULT_SETTINGS_NS).description(
+    '实例命名空间（多实例时每实例唯一，决定路由/设置分区/凭据条目/数据目录）'),
+  botName: Schema.string().description('实例显示名（页面上区分多个机器人）'),
+  enabled: Schema.boolean().default(true).description('是否启用该实例（停用则不建连接、不响应消息）'),
   appId: Schema.string().default('').description('QQ 机器人 AppID'),
   appSecret: Schema.string().default('').description('QQ 机器人 AppSecret'),
   provider: Schema.string().description('LLM provider name'),
