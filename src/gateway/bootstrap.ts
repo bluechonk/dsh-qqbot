@@ -29,6 +29,7 @@ import { ProactiveCooldown } from '../features/proactive/cooldown.ts';
 import { ProactiveObserver } from '../features/proactive/observer.ts';
 import { proactiveDataPath } from '../features/proactive/index.ts';
 import { RawEventLog } from '../features/raw-event-log.ts';
+import { MiddlewareDropLog } from '../features/middleware-log.ts';
 import { GroupActivity } from '../features/proactive/activity.ts';
 import { IdleTracker } from '../features/idle-topic/index.ts';
 import { flushPeopleStoreIfCreated } from '../features/people/index.ts';
@@ -85,7 +86,16 @@ export async function bootstrapGateway(
     // 冷场计时（M8 探测）：任何群消息重置，出站写「她刚发过言」
     idle: new IdleTracker(),
   };
-  setupMiddlewares(bot, config, manager, logger, proactive);
+
+  // ── 中间件链丢弃留痕 ──
+  // 中间件链上每个关卡都能让消息「消失」，此前只有门控会记日志。
+  // 落盘到 ~/.dsh-qqbot/middleware-drops.jsonl。
+  const dropLog = new MiddlewareDropLog({
+    filePath: pluginDataPath('middleware-drops.jsonl'),
+    enabled: config.middlewareLog,
+  });
+
+  setupMiddlewares(bot, config, manager, logger, proactive, dropLog);
 
   // ── 未知网关事件留痕 ──
   // SDK 只对已知事件建模，其余以 rawEvent 透传。QQ 的「戳一戳」在腾讯自家

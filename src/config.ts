@@ -149,6 +149,13 @@ export interface ImQQBotConfig {
    * 记录原始事件才能判断平台是否真的推送。
    */
   rawEventLog: boolean;
+  /**
+   * 中间件链丢弃留痕（→ ~/.dsh-qqbot/middleware-drops.jsonl）
+   *
+   * 中间件链上每个关卡都能让消息「消失」（去重 / 访问控制 / @ 门控 / 限流 /
+   * 并发合并）。默认开启：留痕是这类静默失效唯一的排查入口。
+   */
+  middlewareLog: boolean;
   /** 富媒体理解（图片/视频） */
   media: MediaConfig;
   /** 视觉理解（qqbot_describe_image 工具，走 dsh llm + attachments） */
@@ -301,6 +308,8 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
   debug: Schema.boolean().default(false),
   rawEventLog: Schema.boolean().default(true).description(
     '记录未知网关事件到 ~/.dsh-qqbot/raw-events.jsonl（用于探测「戳一戳」等平台事件是否推送）'),
+  middlewareLog: Schema.boolean().default(true).description(
+    '记录中间件链丢弃到 ~/.dsh-qqbot/middleware-drops.jsonl（去重/门控/限流/并发合并的留痕）'),
   media: Schema.object({
     enabled: Schema.boolean().default(true).description('是否启用富媒体理解（图片/视频下载 + 工具分析）'),
     maxMB: Schema.number().default(200).description('富媒体下载大小上限(MB)'),

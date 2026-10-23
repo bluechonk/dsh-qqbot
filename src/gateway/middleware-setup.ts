@@ -31,6 +31,8 @@ import type { ProactiveCooldown } from '../features/proactive/cooldown.ts';
 import type { ProactiveObserver } from '../features/proactive/observer.ts';
 import type { GroupActivity } from '../features/proactive/activity.ts';
 import type { IdleTracker } from '../features/idle-topic/index.ts';
+import type { MiddlewareDropLog } from '../features/middleware-log.ts';
+import { chainSentinel, mergeWithLog } from '../features/middleware-log.ts';
 
 export function setupMiddlewares(
   bot: QQBot,
@@ -43,9 +45,15 @@ export function setupMiddlewares(
     activity: GroupActivity;
     idle: IdleTracker;
   },
+  dropLog: MiddlewareDropLog,
 ): void {
   // 1. 错误兜底（最外层洋葱皮）
   bot.use(errorHandler());
+
+  // 1.5 丢弃留痕哨兵：必须紧跟 errorHandler，才能包住后面所有关卡。
+  //     下游任何 ctx.stop() 都会让 await next() 正常返回，哨兵在 finally 里读
+  //     stopReason 落盘——一处覆盖全部短路（含 SDK 无钩子的 messageFilter 去重）。
+  bot.use(chainSentinel(dropLog));
 
   // 2. 消息过滤：bot 回声 + 消息去重
   bot.use(messageFilter({ skipSelfEcho: false }));
@@ -120,10 +128,13 @@ export function setupMiddlewares(
   bot.use(questionAnswer(manager));
 
   // 9. 并发串行 + 消息合并（同 peer 排队，避免 session 冲突）
+  //    onMerge 是唯一的「合并留痕」入口：被合并的消息不 stop 链，哨兵看不见，
+  //    而「连发两条只回一条」正需要这条记录来解释。
   bot.use(concurrencyGuard({
     strategy: 'merge',
     maxQueue: config.maxQueue,
     maxProcessingMs: config.processingTimeoutMs,
+    onMerge: (buffered) => mergeWithLog(dropLog, buffered),
   }));
 
   // 10. C2C 输入状态指示

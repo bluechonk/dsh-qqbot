@@ -90,6 +90,7 @@ if ($procs.Count -eq 0) {
             Section '生效配置（关键项）'
             Note "requireMention=$($c.requireMention)  streaming=$($c.streaming)  showToolResults=$($c.showToolResults)"
             Note "reasoningEffort=$($c.reasoningEffort)  rawEventLog=$($c.rawEventLog)"
+            Note "admin.enabled=$($c.admin.enabled)  admin.openids=$($c.admin.openids -join ',')"
             Note "proactive.enabled=$($c.proactive.enabled)  minScore=$($c.proactive.minScore)  maxPerHour=$($c.proactive.maxPerHour)"
             Note "people.enabled=$($c.people.enabled)  antiRepeat.enabled=$($c.antiRepeat.enabled)  stickers.enabled=$($c.stickers.enabled)"
         } catch {
@@ -138,7 +139,31 @@ if (Test-Path $raw) {
     Note '用途：让某人「戳一戳」机器人，再看这里有没有东西'
 }
 
-# ── 5. 群友档案 ──
+# ── 5. 中间件链丢弃留痕 ──
+Section '中间件链丢弃留痕（middleware-drops.jsonl）'
+$drops = Join-Path $DataDir 'middleware-drops.jsonl'
+if (Test-Path $drops) {
+    $dlines = @(Get-Content $drops | Where-Object { $_.Trim() })
+    Note "共 $($dlines.Count) 条留痕"
+    # 类别分布：drop=消息被丢  denied=越权命令  merge=并发合并
+    $ddist = @{}
+    foreach ($l in $dlines) {
+        try {
+            $k = ($l | ConvertFrom-Json).kind
+            if ($k) { $ddist[$k] = ($ddist[$k] + 1) }
+        } catch { }
+    }
+    if ($ddist.Count -gt 0) {
+        Note ('类别分布：' + (($ddist.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join '  '))
+    }
+    Note 'drop=消息没进 agent  denied=命令被拒（越权）  merge=N 条并成 1 轮'
+    Get-Content $drops -Tail $Tail
+} else {
+    Note '不存在（正常）。有群消息后仍无记录，说明链上没有丢弃/合并'
+    Note '用途：机器人「没反应」时先看这里——门控有记录但这里没有，问题在下游'
+}
+
+# ── 6. 群友档案 ──
 Section '群友档案（people.json）'
 $people = Join-Path $DataDir 'people.json'
 if (Test-Path $people) {
@@ -159,7 +184,7 @@ if (Test-Path $people) {
     Warn '不存在 —— 说明插件**从未成功处理过一条消息**（档案在入站时创建）'
 }
 
-# ── 6. 表情包 ──
+# ── 7. 表情包 ──
 Section '表情包（stickers）'
 $cat = Join-Path $DataDir 'stickers.json'
 $assetDir = Join-Path $DataDir 'stickers'
@@ -171,7 +196,7 @@ if (Test-Path $cat) {
 } else { Note '无 stickers.json（功能默认关闭，属正常）' }
 if (Test-Path $assetDir) { Note "素材目录：$assetDir" } else { Note '无素材目录' }
 
-# ── 7. 数据目录总览 ──
+# ── 8. 数据目录总览 ──
 Section '数据目录总览'
 if (Test-Path $DataDir) {
     Get-ChildItem $DataDir -Force | Sort-Object LastWriteTime -Descending |
