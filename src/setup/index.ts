@@ -112,6 +112,8 @@ export async function ensureCredentials(
       const disposeInstanceRoutes = ns === DEFAULT_BIND_NS
         ? registerInstanceRoutes(webServer, logger, { profileDir: pendingProfileDir })
         : () => {};
+      // 注意：effect 的回调返回值才是「销毁器」——不能在回调里直接调用它，
+      // 否则等于注册完立刻注销（路由静默消失，请求全 404）
       return () => { disposeInstanceRoutes(); disposeRoutes(); };
     }, 'im-qqbot.bind-routes');
   });
@@ -154,8 +156,9 @@ export function registerBoundCredentialRoutes(
       ? registerInstanceRoutes(webServer, logger, { profileDir })
       : () => {};
     (scoped as unknown as { effect(fn: () => () => void, name?: string): void }).effect(() => {
-      disposeInstanceRoutes();
-      return disposeRoutes;
+      // effect 回调的**返回值**才是销毁器：在回调里直接调用 disposeInstanceRoutes()
+      // 等于注册完立刻注销 —— 路由静默消失、请求全 404（实测踩过）
+      return () => { disposeInstanceRoutes(); disposeRoutes(); };
     }, 'im-qqbot.bind-routes');
   });
 }
