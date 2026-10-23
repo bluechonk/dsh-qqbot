@@ -159,3 +159,91 @@ describe('PeopleStore 写盘节流', () => {
     expect(() => readFileSync(file, 'utf8')).toThrow();
   });
 });
+
+/**
+ * 长期记忆（memory.facts）。
+ *
+ * 重点验证：
+ *   - 摘要产出的并入 / 去重 / 封顶
+ *   - 无变化不写盘（幂等吸收重复摘要）
+ *   - 老档案（没有 memory 字段）向后兼容
+ *   - (机器人, 群) 隔离对记忆同样成立
+ */
+describe('PeopleStore 长期记忆', () => {
+  it('并入事实并持久化，重读不丢', () => {
+    const file = tempFile();
+    const store = new PeopleStore({ filePath: file, enabled: true });
+    store.touch({ ...BASE, appId: 'a', name: '蓝鲸' });
+    const r = store.mergeMemoryFacts({ ...BASE, appId: 'a' }, ['养了只叫豆豆的猫'], 8);
+    expect(r).toEqual({ added: 1, refreshed: 0, skipped: 0 });
+    store.flush(true); // 模拟宿主 dispose 的强制落盘（平时受 5s 节流约束）
+
+    const reloaded = new PeopleStore({ filePath: file, enabled: true });
+    const mem = reloaded.memoryOf({ ...BASE, appId: 'a' });
+    expect(mem?.facts.map((f) => f.text)).toEqual(['养了只叫豆豆的猫']);
+    expect(mem?.version).toBe(1);
+    expect(mem?.summarizedAt).toBeGreaterThan(0);
+  });
+
+  it('全部被去重吸收时不写盘', () => {
+    const file = tempFile();
+    const store = new PeopleStore({ filePath: file, enabled: true });
+    store.touch({ ...BASE, appId: 'a' });
+    store.mergeMemoryFacts({ ...BASE, appId: 'a' }, ['养了只叫豆豆的猫'], 8);
+    store.flush(true);
+    const readMem = () => {
+      const onDisk = JSON.parse(readFileSync(file, 'utf8')) as {
+        people: Record<string, { memory?: { summarizedAt?: number } }>;
+      };
+      return Object.values(onDisk.people)[0]!.memory;
+    };
+    const first = readMem();
+
+    // 完全相同的事实再并入一次 → 全 skipped → 不置 dirty，flush 也不会写
+    store.mergeMemoryFacts({ ...BASE, appId: 'a' }, ['养了只叫豆豆的猫'], 8);
+    store.flush(true);
+    expect(readMem()?.summarizedAt).toBe(first?.summarizedAt);
+  });
+
+  it('封顶淘汰最旧的', () => {
+    const store = new PeopleStore({ filePath: tempFile(), enabled: true });
+    store.touch({ ...BASE, appId: 'a' });
+    store.mergeMemoryFacts({ ...BASE, appId: 'a' }, ['一', '二', '三'], 3);
+    store.mergeMemoryFacts({ ...BASE, appId: 'a' }, ['四'], 3);
+    const mem = store.memoryOf({ ...BASE, appId: 'a' });
+    expect(mem?.facts.map((f) => f.text)).toEqual(['二', '三', '四']);
+  });
+
+  it('老档案没有 memory 字段照常工作（向后兼容）', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({
+      version: 1,
+      people: {
+        'a|group:g1|u1': { openid: 'u1', name: '旧档案', aliases: [], count: 3, firstSeen: 1, lastSeen: 2 },
+      },
+    }), 'utf8');
+
+    const store = new PeopleStore({ filePath: file, enabled: true });
+    expect(store.memoryOf({ ...BASE, appId: 'a' })).toBeUndefined();
+    const r = store.mergeMemoryFacts({ ...BASE, appId: 'a' }, ['新事实'], 8);
+    expect(r).toEqual({ added: 1, refreshed: 0, skipped: 0 });
+    // 老字段一个不少
+    expect(store.get({ ...BASE, appId: 'a' })).toMatchObject({ name: '旧档案', count: 3 });
+    expect(store.memoryOf({ ...BASE, appId: 'a' })?.facts).toHaveLength(1);
+  });
+
+  it('(机器人, 群) 隔离对记忆成立', () => {
+    const store = new PeopleStore({ filePath: tempFile(), enabled: true });
+    store.touch({ ...BASE, appId: 'botA' });
+    store.touch({ ...BASE, appId: 'botB' });
+    store.mergeMemoryFacts({ ...BASE, appId: 'botA' }, ['只属于A的记忆'], 8);
+    expect(store.memoryOf({ ...BASE, appId: 'botA' })?.facts.map((f) => f.text)).toEqual(['只属于A的记忆']);
+    expect(store.memoryOf({ ...BASE, appId: 'botB' })).toBeUndefined();
+  });
+
+  it('关闭时不并入也不返回', () => {
+    const store = new PeopleStore({ filePath: tempFile(), enabled: false });
+    expect(store.memoryOf({ ...BASE, appId: 'a' })).toBeUndefined();
+    expect(store.mergeMemoryFacts({ ...BASE, appId: 'a' }, ['x'], 8)).toBeUndefined();
+  });
+});

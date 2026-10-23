@@ -10,6 +10,8 @@
  * 所以档案的积累只能靠本地启发式，不能靠模型。
  */
 
+import type { PersonMemory } from './memory.ts';
+
 /** 单个群友的档案 */
 export interface PersonProfile {
   /** 用户 openid */
@@ -24,6 +26,8 @@ export interface PersonProfile {
   firstSeen: number;
   /** 最近一次见到的时间戳（ms） */
   lastSeen: number;
+  /** 长期记忆（可选，老档案没有这个字段照常工作） */
+  memory?: PersonMemory;
 }
 
 /** 自我介绍句式 → 提取别名 */
