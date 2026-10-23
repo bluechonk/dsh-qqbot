@@ -25,6 +25,12 @@ interface AccessControlWire {
   groupAllow: string[];
 }
 
+/** 命令权限配置（与 src/config.ts 的 AdminConfig 对应的局部投影） */
+interface AdminWire {
+  enabled: boolean;
+  openids: string[];
+}
+
 /** 自主接话配置（与 src/config.ts 的 ProactiveConfig 对应的局部投影） */
 interface ProactiveWire {
   enabled: boolean;
@@ -49,6 +55,7 @@ type ConfigWire = {
   groupPrompt?: string;
   directPrompt?: string;
   access?: AccessControlWire;
+  admin?: AdminWire;
   proactive?: ProactiveWire;
   replyDelayMs?: number;
   replyDelayPerCharMs?: number;
@@ -374,6 +381,13 @@ export function ConfigPanel(): ReactNode {
         groupAllow: a.groupAllow.map((s) => s.trim()).filter(Boolean),
       };
     }
+    if (changed.admin !== undefined) {
+      const a = changed.admin as AdminWire;
+      changed.admin = {
+        ...a,
+        openids: a.openids.map((s) => s.trim()).filter(Boolean),
+      };
+    }
 
     setBusy(true);
     void fetch(BIND_CONFIG_PATH, {
@@ -406,6 +420,7 @@ export function ConfigPanel(): ReactNode {
 
   const dirty = (Object.keys(form) as Array<keyof ConfigWire>).some((key) => !sameValue(form[key], initial[key]));
   const access: AccessControlWire = form.access ?? { c2cMode: 'open', c2cAllow: [], groupMode: 'open', groupAllow: [] };
+  const admin: AdminWire = form.admin ?? { enabled: true, openids: [] };
   const proactive: ProactiveWire = form.proactive ?? {
     enabled: false, minScore: 0.55, cooldownMs: 120000, maxPerHour: 6, minLength: 6, observer: true,
   };
@@ -432,6 +447,20 @@ export function ConfigPanel(): ReactNode {
           label: '群聊白名单', help: '请输入群 openid，多个请换行输入', rows: 3,
           value: access.groupAllow.join('\n'),
           onChange: (v) => { patch('access', { ...access, groupAllow: v.split('\n').map((s) => s.trim()) }); },
+        })
+      : null,
+
+    createElement('div', { className: 'imqb2-group-title' }, '命令权限'),
+    createElement(SwitchRow, {
+      label: '启用命令权限校验', checked: admin.enabled,
+      help: '关闭后所有人都能执行 /model、/new 等命令，仅调试时关闭',
+      onChange: (v) => { patch('admin', { ...admin, enabled: v }); },
+    }),
+    admin.enabled
+      ? createElement(AreaRow, {
+          label: '主人 openid', help: '填自己的 openid，多个换行输入；留空则高权限命令对所有人关闭。用 /whoami 查看', rows: 3,
+          value: admin.openids.join('\n'),
+          onChange: (v) => { patch('admin', { ...admin, openids: v.split('\n').map((s) => s.trim()) }); },
         })
       : null,
 
