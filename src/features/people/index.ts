@@ -5,5 +5,7 @@
  * 详见 docs/拟人化路线图.md 的 M4。
  */
 export * from './format.ts';
+export * from './memory.ts';
 export * from './store.ts';
+export * from './trigger.ts';
 export { getPeopleStore, flushPeopleStoreIfCreated, resetPeopleStore } from './singleton.ts';

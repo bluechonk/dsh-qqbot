@@ -20,7 +20,7 @@ import {
   type MediaKind,
 } from './attachment.ts';
 import { clearGroupHistory } from '../features/history-store.ts';
-import { buildProfileLine, extractAlias, getPeopleStore } from '../features/people/index.ts';
+import { buildProfileLine, buildMemoryLine, extractAlias, getPeopleStore, type MemoryTrigger } from '../features/people/index.ts';
 import { buildRecentRepliesLine, getReplyHistory } from '../features/anti-repeat/index.ts';
 import type { ProactiveDecision } from '../features/proactive/types.ts';
 import type { MiddlewareContext } from '@tencent-connect/qqbot-nodejs';
@@ -95,6 +95,7 @@ export async function handleInbound(
   manager: SessionManager,
   config: ImQQBotConfig,
   logger: Logger,
+  memory?: MemoryTrigger,
 ): Promise<void> {
   const msg = ctx.message as unknown as ProcessedMessage;
   const mwState = ctx.state as MiddlewareState;
@@ -127,6 +128,14 @@ export async function handleInbound(
     maxAliases: config.people.maxAliases,
   });
 
+  // ── 长期记忆：把上一轮积累的事实注入旁白（紧跟档案行，同样走旁白区） ──
+  const memoryLine = config.people.memory.enabled
+    ? buildMemoryLine(profile?.memory, {
+        isGroup: scope === 'group',
+        injectFacts: config.people.memory.injectFacts,
+      })
+    : '';
+
   // ── 防复读：把「你最近说过什么」前置，让模型自己换说法 ──
   // 走预防而不是事后纠正——后者要多跑一轮模型，陪聊场景对延迟很敏感。
   const replyKey = manager.sessionKey(scope, peerId);
@@ -138,7 +147,7 @@ export async function handleInbound(
 
   // ── 组装 agentBody（下载结果经 mwState.downloadedFiles 提供） ──
   const agentBody = assembleAgentBody(
-    msg, mwState, scope, logger, `${profileLine}${recentLine}`,
+    msg, mwState, scope, logger, `${profileLine}${memoryLine}${recentLine}`,
   );
 
   if (!agentBody) return;
@@ -159,6 +168,14 @@ export async function handleInbound(
     }
     return;
   }
+
+  // ── 长期记忆：这一轮进缓冲，满 N 轮触发一次异步摘要（不阻塞回复） ──
+  memory?.recordTurn({
+    scope,
+    scopeId: scope === 'group' ? (msg.groupOpenid ?? msg.senderId) : 'c2c',
+    openid: msg.senderId,
+    text: msg.content ?? '',
+  });
 
   // ── 构建 UserMessage → followup ──
   //

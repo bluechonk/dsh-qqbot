@@ -206,12 +206,34 @@ export interface AntiRepeatConfig {
   historySize: number;
 }
 
+/** 群友长期记忆配置 */
+export interface PeopleMemoryConfig {
+  /** 是否启用长期记忆（默认关：有成本、有行为影响，主人确认效果后再开） */
+  enabled: boolean;
+  /** 每几轮对话做一次摘要 */
+  summarizeEveryTurns: number;
+  /** 每人最多保留几条事实（超出淘汰最旧的） */
+  maxFacts: number;
+  /** 注入提示时最多带几条事实（群聊自动减半） */
+  injectFacts: number;
+  /** 摘要用的模型 provider（留空 = 整个功能不生效） */
+  provider: string;
+  /** 摘要用的模型 id */
+  model: string;
+  /** 单次摘要的输出上限（事实都是短句，不必给大值） */
+  maxTokens: number;
+  /** 单次摘要的输入上限（字），超出取最近的 */
+  maxInputChars: number;
+}
+
 /** 群友档案配置 */
 export interface PeopleConfig {
   /** 是否启用群友档案（记住昵称、称呼、互动次数） */
   enabled: boolean;
   /** 注入提示时最多带几个别名（多了像背资料） */
   maxAliases: number;
+  /** 长期记忆（插件侧异步摘要） */
+  memory: PeopleMemoryConfig;
 }
 
 /** 自主接话配置 */
@@ -257,10 +279,23 @@ export const AntiRepeatSchema: Schema<AntiRepeatConfig> = Schema.object({
   historySize: Schema.number().default(5).description('记住自己最近几条发言'),
 }).description('防复读（别把自己变成复读机）');
 
+/** 群友长期记忆子 Schema */
+export const PeopleMemorySchema: Schema<PeopleMemoryConfig> = Schema.object({
+  enabled: Schema.boolean().default(false).description('启用长期记忆（插件侧异步摘要，默认关）'),
+  summarizeEveryTurns: Schema.number().default(8).description('每几轮对话做一次摘要'),
+  maxFacts: Schema.number().default(8).description('每人最多保留几条事实'),
+  injectFacts: Schema.number().default(5).description('注入提示时最多带几条事实（群聊自动减半）'),
+  provider: Schema.string().default('').description('摘要模型 provider（留空则长期记忆不生效）'),
+  model: Schema.string().default('').description('摘要模型 id'),
+  maxTokens: Schema.number().default(512).description('单次摘要输出上限'),
+  maxInputChars: Schema.number().default(4000).description('单次摘要输入上限（字）'),
+}).description('群友长期记忆（无工具方案：插件侧异步摘要）');
+
 /** 群友档案子 Schema */
 export const PeopleSchema: Schema<PeopleConfig> = Schema.object({
   enabled: Schema.boolean().default(true).description('启用群友档案（记住昵称、称呼、互动次数）'),
   maxAliases: Schema.number().default(2).description('注入提示时最多带几个别名'),
+  memory: PeopleMemorySchema,
 }).description('群友档案（记住谁是谁）');
 
 /** 自主接话子 Schema */
@@ -322,6 +357,16 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
   people: PeopleSchema.default({
     enabled: true,
     maxAliases: 2,
+    memory: {
+      enabled: false,
+      summarizeEveryTurns: 8,
+      maxFacts: 8,
+      injectFacts: 5,
+      provider: '',
+      model: '',
+      maxTokens: 512,
+      maxInputChars: 4000,
+    },
   }).description('群友档案（记住谁是谁）'),
   antiRepeat: AntiRepeatSchema.default({
     enabled: true,
