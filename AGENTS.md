@@ -192,6 +192,7 @@ pnpm test               # vitest
 | [docs/内部机制.md](docs/内部机制.md) | 中间件链、数据目录、开发模式 |
 | [docs/自主接话.md](docs/自主接话.md) | 门控判定与开口策略 |
 | [docs/拟人化路线图.md](docs/拟人化路线图.md) | 拟人化能力清单与各模块状态 |
+| [docs/群友档案.md](docs/群友档案.md) | 群友长期记忆的设计（设计稿） |
 | [docs/表情包.md](docs/表情包.md) | 图库格式、情绪标签、时机规则 |
 | [docs/验收清单.md](docs/验收清单.md) | 人工验收清单（照着走一遍） |
 | [docs/多机器人.md](docs/多机器人.md) | 多账号接入（settingsNs 多实例） |

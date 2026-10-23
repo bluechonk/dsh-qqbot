@@ -85,7 +85,17 @@ describe('buildRecentRepliesLine', () => {
   it('带出最近的发言并提示换说法', () => {
     const line = buildRecentRepliesLine(['哼，又来？', '别烦我']);
     expect(line).toContain('哼，又来？');
-    expect(line).toContain('复读');
+    expect(line).toContain('换个说法');
+  });
+
+  it('原话引用保留（语气锚点，不省这点 token）', () => {
+    expect(buildRecentRepliesLine(['哼，又来？'])).toContain('「哼，又来？」');
+  });
+
+  it('给出「别为了不重复而跑题」的边界', () => {
+    // 实测踩过：只说「换个说法」会把她推离刚说过的准确内容，
+    // 逼她自己发明新角度 —— 短消息时尤其容易跑题
+    expect(buildRecentRepliesLine(['哼，又来？'])).toContain('跑题');
   });
 
   it('最多只带 3 条，避免把上下文撑长', () => {

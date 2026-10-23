@@ -75,8 +75,16 @@ export function isRepeating(
 /**
  * 渲染「你最近说过」提示。
  *
- * 刻意写得像提醒而不是禁令：说「别重复」会让她开始解释自己为什么不重复。
- * 这些原话本身也是很好的语气锚点，能帮她把人格延续下去。
+ * 三个刻意的取舍：
+ *
+ * 1. **保留原话引用**，不省这点 token。这些原话是很好的**语气锚点**，
+ *    能帮她把人格延续下去；省掉换不来什么，却让语气更容易飘。
+ *    （实测：引 3 句 ≈ 60 token，在 7K 上下文里不到 1%）
+ * 2. **但把「换个说法」的边界写清楚**。实测踩过：只说「换个说法，别复读」
+ *    会把她推离自己刚说过的准确内容，逼她自己发明新角度。用户发短消息
+ *    （「这就是你」四个字）时缺方向可循，于是跑题——那次她把
+ *    「这是个 Q 版小人」读成了「你在笑我矮」。所以补一句「别为了不重复而跑题」。
+ * 3. **写得像提醒而不是禁令**：说「别重复」会让她开始解释自己为什么不重复。
  */
 export function buildRecentRepliesLine(history: readonly string[]): string {
   const usable = history
@@ -86,7 +94,7 @@ export function buildRecentRepliesLine(history: readonly string[]): string {
   if (usable.length === 0) return '';
 
   const quoted = usable.map((line) => `「${clip(line, 30)}」`).join('');
-  return `【你最近说过】${quoted}——换个说法，别让人觉得你在复读。\n`;
+  return `【你最近说过】${quoted}——换个说法，但别为了不重复而跑题。\n`;
 }
 
 /** 截断到指定长度，超出加省略号 */
