@@ -71,11 +71,11 @@ export interface SendFileConfig {
 }
 
 /**
- * 固定使用的 agent preset id —— QQ 聊天模式。
+ * 默认 agent preset id —— QQ 聊天模式。
  *
- * 本插件的会话**固定**跑在这个预设上：不挂终端与文件工具，人格与说话风格由
- * 插件自带的 preset 定义（见 cordis.patch.yml 的 preset-qqchat）决定。
- * 因此 `/preset` 只做只读展示，不支持切换到其他预设。
+ * 只是**默认值**：per-peer 偏好（/preset 切换）优先于此，两者都缺省时用它。
+ * 本插件的会话跑在这个预设上时是零工具：不挂终端与文件工具，
+ * 人格与说话风格由插件自带的 preset 定义（见 cordis.patch.yml 的 preset-qqchat）决定。
  */
 export const FIXED_PRESET_ID = 'qqchat';
 
@@ -88,7 +88,11 @@ export interface ImQQBotConfig {
   provider?: string;
   /** 模型名称 */
   model?: string;
-  /** Agent preset id（已固定为 qqchat；此项不再生效，仅为兼容旧配置保留） */
+  /**
+   * Agent preset id（插件级默认，优先级低于 per-peer 偏好）
+   *
+   * 留空则回落到 qqchat。切换是 per-peer 的（见 /preset 命令）。
+   */
   preset?: string;
   /**
    * 思考强度：off / low / medium / high / max

@@ -16,8 +16,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import type { Context } from '@deepseek-ai/cordis';
 import type { ChatScope, Logger, ReplyTarget } from '../types.ts';
-import { FIXED_PRESET_ID, type ImQQBotConfig } from '../config.ts';
+import type { ImQQBotConfig } from '../config.ts';
 import { ModelResolver } from '../model/model-resolver.ts';
+import { resolvePresetId } from '../model/preset-resolution.ts';
 import type { ModelRoute, ModelEntry } from '../model/types.ts';
 import { IdleEvictor } from './idle-evictor.ts';
 import type { QuestionChannel } from '../features/question-channel.ts';
@@ -34,6 +35,8 @@ import type {
   TokenUsageStats,
   CompactionServiceLike,
   CompactOutcome,
+  PresetEntry,
+  PresetSwitchOutcome,
 } from './types.ts';
 
 /** ManualCompactionError 各 code 的友好提示 */
@@ -158,16 +161,75 @@ export class SessionManager {
   /**
    * 获取指定 peer 的生效 preset。
    *
-   * 固定为 qqchat：per-peer 覆盖与 config.preset 均不再生效——
-   * 本插件只跑 QQ 聊天模式，不支持切换到其他预设。
+   * 默认 `qqchat`（QQ 聊天模式，零工具 + 内置人格），但允许切换：
+   *   per-peer 偏好 > config.preset > qqchat
+   *
+   * ⚠️ preset 在会话**创建时**固定，`agents.resume()` 改不了它。
+   * 所以切换 = 持久化偏好 + 重建会话，不能只改偏好。
    */
   getEffectivePreset(scope: ChatScope, peerId: string): string | undefined {
     return this.getEffectivePresetByKey(this.sessionKey(scope, peerId));
   }
 
-  /** 按 sessionKey 解析生效 preset（固定 qqchat） */
-  private getEffectivePresetByKey(_key: string): string | undefined {
-    return FIXED_PRESET_ID;
+  /** 按 sessionKey 解析生效 preset */
+  private getEffectivePresetByKey(key: string): string {
+    return resolvePresetId(this.modelResolver.getPreset(key), this.config.preset);
+  }
+
+  /**
+   * 列出所有可用 preset（`agentPresets.list()`）。
+   *
+   * 服务不可用时返回空数组——`/preset` 命令要能优雅降级而不是报错。
+   */
+  async listAvailablePresets(): Promise<PresetEntry[]> {
+    const presets = this.getPresetsService();
+    if (!presets) return [];
+    try {
+      const list = await presets.list();
+      return list
+        .filter((p) => p && typeof p.id === 'string' && p.id.length > 0)
+        .map((p) => ({ id: p.id, name: p.name, description: p.description }));
+    } catch (err) {
+      this.logger.warn(`list presets failed: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+  }
+
+  /**
+   * 切换 preset（持久化偏好 + 重建会话）。
+   *
+   * 切换必须重建：preset 决定工具集与 prompt sections，而 `agents.resume()`
+   * 只接受 agentOptions 与 setup，**改不了 preset**（已实测证实）。
+   *
+   * 历史通过事件快照保留（见 rebuildSession），所以切换不清空上下文。
+   */
+  async setPresetOverride(scope: ChatScope, peerId: string, presetId: string): Promise<PresetSwitchOutcome> {
+    const key = this.sessionKey(scope, peerId);
+
+    // 先确认 preset 真的可用：resolve 成功且未标记 broken
+    const presets = this.getPresetsService();
+    if (!presets) return { ok: false, reason: 'unavailable', message: '宿主未提供 agentPresets 服务，无法切换 preset' };
+    try {
+      const resolved = await presets.resolve(presetId);
+      if (resolved?.broken) {
+        return { ok: false, reason: 'broken', presetId, message: `preset ${presetId} 已损坏：${resolved.broken}` };
+      }
+    } catch (err) {
+      return { ok: false, reason: 'unknown-preset', presetId, message: `没有这个 preset：${err instanceof Error ? err.message : String(err)}` };
+    }
+
+    const previous = this.getEffectivePresetByKey(key);
+    this.modelResolver.setPreset(key, presetId);
+
+    const record = this.sessions.get(key);
+    if (!record) {
+      this.logger.info(`preset pref saved (no active session): key=${key} → ${presetId}`);
+      return { ok: true, presetId };
+    }
+
+    await this.rebuildSession(record);
+    this.logger.info(`preset switched: key=${key} ${previous} → ${presetId}`);
+    return { ok: true, presetId };
   }
 
   /**
@@ -199,7 +261,7 @@ export class SessionManager {
    */
   private async rebuildSession(
     record: SessionRecord,
-    options: { route?: ModelRoute },
+    options: { route?: ModelRoute } = {},
   ): Promise<void> {
     const key = record.sessionKey;
 
@@ -237,8 +299,10 @@ export class SessionManager {
     });
 
     this.modelResolver.setSessionId(key, childId);
-    // 重建出来的会话同样要记 preset，否则下次会被误判为「preset 不对」再丢一次
-    this.modelResolver.setPreset(key, FIXED_PRESET_ID);
+    // 重建出来的会话记的是「实际用的 preset」，不是用户偏好——
+    // 一致性检测拿它跟生效 preset 比，记成偏好会让切换后立刻被判为不一致
+    const effectivePreset = composed.agentPreset ?? this.getEffectivePresetByKey(key);
+    this.modelResolver.setSessionPreset(key, effectivePreset);
 
     const oldHandle = record.handle;
     record.sessionId = childId;
@@ -397,15 +461,16 @@ export class SessionManager {
 
     // ⚠️ preset 在会话**创建时**就固定了，`agents.resume()` 改不了它
     //（resume 只接受 agentOptions 与 setup，没有 preset 参数）。
-    // 所以早期用别的 preset 建的会话会**一直**跑错预设。
+    // 所以用别的 preset 建的会话会**一直**跑错预设。
     // 实测：有会话一直跑 standard —— 人格完全不生效、还带着 pwsh 等全套工具，
     // 而它看起来「能回话」，所以极难发现。
-    // 这里发现记录不一致就丢弃会话，让下面重新建一个正确 preset 的。
-    const recordedPreset = this.modelResolver.getPreset(key);
-    if (recordedPreset !== FIXED_PRESET_ID) {
+    // 这里拿「会话实际用的 preset」跟**生效 preset**比，不一致就丢弃重建。
+    const effectivePreset = this.getEffectivePresetByKey(key);
+    const recordedSessionPreset = this.modelResolver.getSessionPreset(key);
+    if (recordedSessionPreset !== undefined && recordedSessionPreset !== effectivePreset) {
       this.logger.warn(
-        `session preset mismatch (recorded=${recordedPreset ?? 'unknown'}, want=${FIXED_PRESET_ID}); `
-        + `dropping it to rebuild with the right preset: key=${key}`,
+        `session preset mismatch (recorded=${recordedSessionPreset}, effective=${effectivePreset}); `
+        + `dropping it to rebuild: key=${key}`,
       );
       this.modelResolver.setSessionId(key, randomUUID());
     }
@@ -423,10 +488,8 @@ export class SessionManager {
       this.logger.info(`reusing live agent: key=${key}`);
     } else {
       // preset 只解析一次：resume/create 共用同一组合，避免重复 resolve/mount 目录。
-      // 固定 qqchat：连同 session 当初记录的 preset 一并忽略，
-      // 保证旧会话恢复后也回到 QQ 聊天模式，不被历史 preset 拖住。
-      const presetId = FIXED_PRESET_ID;
-      const composed = await this.composePreset(presetId);
+      // 用**生效 preset**（偏好 > config.preset > qqchat），不再硬编码 qqchat。
+      const composed = await this.composePreset(effectivePreset);
       agentPreset = composed.agentPreset;
       try {
         const resumeRoute = await this.modelResolver.getResumeRouteChecked(key);
@@ -467,8 +530,9 @@ export class SessionManager {
       agentPreset,
     };
 
-    // 记下这个会话用的是哪个 preset，供下次判断要不要丢弃重建
-    this.modelResolver.setPreset(key, FIXED_PRESET_ID);
+    // 记下这个会话**实际**用的 preset，供下次判断要不要丢弃重建。
+    // 用户偏好写在 presets，实际值写在 sessionPresets，两者刻意分开。
+    this.modelResolver.setSessionPreset(key, agentPreset ?? effectivePreset);
 
     this.sessions.set(key, record);
     return record;

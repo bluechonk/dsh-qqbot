@@ -40,8 +40,8 @@
         debug: false
 
 # ── 插入 qqchat 预设行 ────────────────────────────────────────────
-# 本插件的会话**固定**使用这个预设（见 src/config.ts 的 FIXED_PRESET_ID），
-# /preset 命令只做只读展示、不支持切换。
+# 本插件**默认**使用这个预设（见 src/config.ts 的 FIXED_PRESET_ID），
+# 但 /preset 命令支持切换到其他 preset（默认仍是 qqchat）。
 # 特点：
 #   · 不挂 persistent-shell（bash/pwsh）与 tool-fs —— 工具清单里没有终端、没有文件读写
 #   · persona.complete=true —— 这段 prefix 直接作为完整 system prompt

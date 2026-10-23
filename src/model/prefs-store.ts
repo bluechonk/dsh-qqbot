@@ -17,8 +17,15 @@ interface PrefsFile {
   overrides: Record<string, ModelRoute>;
   /** sessionKey → 最新 sessionId（重建会话后更新，用于重启后恢复到重建后的会话） */
   sessionIds: Record<string, string>;
-  /** sessionKey → preset id（per-peer preset 覆盖） */
+  /** sessionKey → 用户选的 preset（per-peer 偏好，恢复它原本的语义） */
   presets: Record<string, string>;
+  /**
+   * sessionKey → 会话**实际创建时**用的 preset。
+   *
+   * 必须与 `presets` 分开：两者混用会导致「刚切换完就被自己的一致性检测丢掉」
+   * ——切换写的是偏好，而一致性检测要拿「会话真实跑的」来比。
+   */
+  sessionPresets: Record<string, string>;
 }
 
 export class PrefsStore {
@@ -28,12 +35,18 @@ export class PrefsStore {
   private sessionIds = new Map<string, string>();
   /** per-peer preset 偏好（内存态） */
   private presets = new Map<string, string>();
+  /** 会话实际创建时用的 preset（内存态） */
+  private sessionPresets = new Map<string, string>();
   /** 隔离偏好文件路径 */
   private readonly prefsPath: string;
   private readonly debugLog?: DebugFn;
 
-  constructor(debugLog?: DebugFn) {
-    this.prefsPath = resolve(homedir(), '.dsh-qqbot', 'model-prefs.json');
+  /**
+   * @param debugLog 调试日志回调
+   * @param prefsPath 偏好文件路径（仅测试注入用；默认 ~/.dsh-qqbot/model-prefs.json）
+   */
+  constructor(debugLog?: DebugFn, prefsPath?: string) {
+    this.prefsPath = prefsPath ?? resolve(homedir(), '.dsh-qqbot', 'model-prefs.json');
     this.debugLog = debugLog;
     this.load();
   }
@@ -93,6 +106,19 @@ export class PrefsStore {
     return deleted;
   }
 
+  // ── 会话实际 preset 操作（一致性检测用） ──
+
+  /** 会话**实际创建时**用的 preset */
+  getSessionPreset(sessionKey: string): string | undefined {
+    return this.sessionPresets.get(sessionKey);
+  }
+
+  /** 记录会话实际用的 preset 并持久化 */
+  setSessionPreset(sessionKey: string, presetId: string): void {
+    this.sessionPresets.set(sessionKey, presetId);
+    this.write();
+  }
+
   // ── 私有方法 ──
 
   private load(): void {
@@ -121,6 +147,15 @@ export class PrefsStore {
           }
         }
       }
+      // 旧版本没有这个字段：缺失时回落到 presets（老数据里两者本来就是同一个）
+      const sessionPresetSource = data.sessionPresets ?? data.presets;
+      if (sessionPresetSource && typeof sessionPresetSource === 'object') {
+        for (const [key, presetId] of Object.entries(sessionPresetSource)) {
+          if (typeof presetId === 'string' && presetId) {
+            this.sessionPresets.set(key, presetId);
+          }
+        }
+      }
     } catch (err) {
       this.debugLog?.(`loadPrefs failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -133,6 +168,7 @@ export class PrefsStore {
         overrides: Object.fromEntries(this.overrides.entries()),
         sessionIds: Object.fromEntries(this.sessionIds.entries()),
         presets: Object.fromEntries(this.presets.entries()),
+        sessionPresets: Object.fromEntries(this.sessionPresets.entries()),
       };
       writeFileSync(this.prefsPath, JSON.stringify(data, null, 2), 'utf8');
     } catch (err) {

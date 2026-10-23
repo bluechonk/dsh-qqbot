@@ -259,6 +259,21 @@ export class ModelResolver {
   }
 
   /**
+   * 会话**实际创建时**用的 preset（一致性检测用）。
+   *
+   * 与 `getPreset`（用户偏好）刻意分开——混用会让「刚切换完就被
+   * 一致性检测丢掉」。
+   */
+  getSessionPreset(sessionKey: string): string | undefined {
+    return this.prefs.getSessionPreset(sessionKey);
+  }
+
+  /** 记录会话实际用的 preset 并持久化 */
+  setSessionPreset(sessionKey: string, presetId: string): void {
+    this.prefs.setSessionPreset(sessionKey, presetId);
+  }
+
+  /**
    * 解析默认模型路由（不含 per-peer 偏好）
    *
    * 优先级：config 显式指定 > settings.yaml（只读） > 宿主 agentDefaultModel
