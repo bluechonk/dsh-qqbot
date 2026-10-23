@@ -194,4 +194,4 @@ pnpm test               # vitest
 | [docs/拟人化路线图.md](docs/拟人化路线图.md) | 拟人化能力清单与各模块状态 |
 | [docs/表情包.md](docs/表情包.md) | 图库格式、情绪标签、时机规则 |
 | [docs/验收清单.md](docs/验收清单.md) | 人工验收清单（照着走一遍） |
-| [docs/多机器人.md](docs/多机器人.md) | 多账号接入方案（未实现） |
+| [docs/多机器人.md](docs/多机器人.md) | 多账号接入（settingsNs 多实例） |

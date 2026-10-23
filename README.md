@@ -208,6 +208,41 @@ profile  <DSH_HOME>/profiles/<profile>/cordis.patch.yml   # im-qqbot 条目
 
 填之前，高权限命令对**所有人**关闭（安全默认），拒绝文案里会提示上面这几步。
 
+## 多个机器人
+
+一个 dsh 可以同时接多个 QQ 机器人：在 profile 的 `cordis.patch.yml` 里加多行插件行，
+**每行一个唯一 `settingsNs`**。
+
+```yaml
+- id: im-qqbot
+  config:
+    settingsNs: im-qqbot
+    botName: 工作号
+    appId: '1905526094'
+    appSecret: '***'
+- id: im-qqbot-2
+  config:
+    settingsNs: im-qqbot-2
+    botName: 摸鱼号
+    appId: '1905526095'
+    appSecret: '***'
+```
+
+也可以完全在页面上操作：设置 → QQ 机器人 → 实例列表里「＋ 添加机器人」、
+停用/启用、删除，点某个实例的「设置」切换要编辑的配置。
+
+要点：
+
+- `settingsNs` **必须唯一**。重复会让两个实例互相覆盖配置与数据，而且症状是静默的，
+  所以启动时会校验，冲突直接拒绝启动并报错
+- 每个实例的本地数据（群友档案、表情包、判定日志）按 `settingsNs` 分目录——
+  多个机器人是不同的「人」，对群友的称呼与亲疏各自独立
+- 会话按 `appId` 隔离，两个机器人加到同一个群不会串会话
+- `enabled: false` 停用某实例：不建连接、不响应消息，配置保留
+- 默认实例（`settingsNs: im-qqbot`）不可删除
+
+细节见 [docs/多机器人.md](docs/多机器人.md)。
+
 ## 内部机制
 
 - Host 半挂在同源路由 `/qqbot/im-qqbot/*`（绑定状态、扫码、手动填写、配置读写），只接受本机同源请求
