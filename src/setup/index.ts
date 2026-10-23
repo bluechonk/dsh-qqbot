@@ -15,7 +15,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { Logger } from '../types.ts';
 import { BindingService } from './binding-service.ts';
-import { registerBindRoutes, type WebServerLike } from './bind-routes.ts';
+import { registerBindRoutes, registerInstanceRoutes, type WebServerLike } from './bind-routes.ts';
 import { createBrowserPresenter, createTerminalPresenter, isDesktopHost } from './presenters.ts';
 import { persistCredentialsToProfile, type SetupCredentials, DEFAULT_PATCH_ENTRY_ID } from './persist.ts';
 import { getProfileDir } from '../shared/index.ts';
@@ -108,7 +108,11 @@ export async function ensureCredentials(
     });
     // 回调作用域（服务卸载/替换、插件卸载）连带注销路由
     (scoped as unknown as { effect(fn: () => () => void, name?: string): void }).effect(() => {
-      return disposeRoutes;
+      // 未绑定实例也要能管理实例（否则没法添加机器人）
+      const disposeInstanceRoutes = ns === DEFAULT_BIND_NS
+        ? registerInstanceRoutes(webServer, logger, { profileDir: pendingProfileDir })
+        : () => {};
+      return () => { disposeInstanceRoutes(); disposeRoutes(); };
     }, 'im-qqbot.bind-routes');
   });
 
@@ -144,7 +148,13 @@ export function registerBoundCredentialRoutes(
       profileDir,
       settingsNs,
     });
+    // 实例管理路由只由默认实例提供一份（多实例各注册一份会撞路由）。
+    // 未绑定实例同样要能管理（否则没法添加机器人）。
+    const disposeInstanceRoutes = settingsNs === DEFAULT_BIND_NS
+      ? registerInstanceRoutes(webServer, logger, { profileDir })
+      : () => {};
     (scoped as unknown as { effect(fn: () => () => void, name?: string): void }).effect(() => {
+      disposeInstanceRoutes();
       return disposeRoutes;
     }, 'im-qqbot.bind-routes');
   });
