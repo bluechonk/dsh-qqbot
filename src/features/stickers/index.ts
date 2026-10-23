@@ -11,5 +11,6 @@ export * from './mood.ts';
 export * from './catalog.ts';
 export * from './select.ts';
 export {
-  getStickerCatalog, getStickerState, setStickerState, resetStickerRuntime, resolveStickerPath,
+  getStickerCatalog, getStickerState, setStickerState, resetStickerRuntime,
+  resolveStickerPath, setStickerPathsForTest,
 } from './runtime.ts';

@@ -1,10 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createOutboundHandler } from './outbound.ts';
 import type { QQBotSender, StreamSessionLike } from './outbound-buffer.ts';
 import type { SessionManager, SessionRecord } from '../session/index.ts';
 import type { ImQQBotConfig } from '../config.ts';
 import type { Logger, ReplyTarget } from '../types.ts';
 import { getReplyHistory, resetReplyHistory } from '../features/anti-repeat/index.ts';
+import {
+  resetStickerRuntime,
+  setStickerPathsForTest,
+  setStickerState,
+} from '../features/stickers/index.ts';
 
 function createLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -231,6 +239,101 @@ describe('OutboundRouter.routeStreamFrame', () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(bot.sendMarkdown).toHaveBeenCalledWith(groupTarget, 'group reply');
       expect(getReplyHistory().list('k')).toEqual(['group reply']);
+    });
+  });
+
+  // ── 表情包发送的集成覆盖 ──
+  // 图库路径写死的话，整条表情流程在测试里只能走到「图库为空」，
+  // 等于没有覆盖。这里用临时图库真正跑一遍。
+  describe('表情包发送', () => {
+    const dirs: string[] = [];
+
+    /** 建一个含一张「得意」图的临时图库，返回 catalog 路径 */
+    function tempCatalog(): string {
+      const dir = mkdtempSync(join(tmpdir(), 'dsh-qqbot-sticker-'));
+      dirs.push(dir);
+      const catalogPath = join(dir, 'stickers.json');
+      writeFileSync(catalogPath, JSON.stringify({
+        version: 1,
+        stickers: [{ id: 's1', file: 'a.png', mood: '得意', strength: 'light' }],
+      }), 'utf8');
+      return catalogPath;
+    }
+
+    /** 造一个能收图的 bot（带 sendImage） */
+    function setupWithStickers(record: SessionRecord) {
+      const session = createSession();
+      const bot = { ...createBot(session), sendImage: vi.fn().mockResolvedValue(undefined) };
+      const manager = {
+        findBySessionId: vi.fn((id: string) => (id === 'sess-qq' ? record : undefined)),
+      } as unknown as SessionManager;
+      const config = createConfig({
+        stickers: { enabled: true, maxTextReplies: 1, cooldownMs: 0 },
+      });
+      const outbound = createOutboundHandler(
+        manager, bot as unknown as QQBotSender, config, createLogger(),
+      );
+      return { outbound, bot };
+    }
+
+    beforeEach(() => {
+      resetStickerRuntime();
+      // 先攒够「连续文字条数」：count 从 0 起，阈值 1 → 发一条文字后就该配图
+      setStickerState('k', { textRepliesSinceSticker: 1 });
+    });
+
+    afterEach(() => {
+      resetStickerRuntime();
+      while (dirs.length > 0) {
+        const dir = dirs.pop();
+        if (dir) rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('有 msgId 时发送表情（mood 命中「得意」）', async () => {
+      setStickerPathsForTest({ catalogPath: tempCatalog(), assetRoot: 'C:/tmp' });
+      const { outbound, bot } = setupWithStickers(createRecord(groupTarget));
+
+      outbound.routeSessionEvent({ header: { id: 'sess-qq' } }, {
+        type: 'assistant/message',
+        data: { message: { content: [{ type: 'text', text: '废话，我本来就厉害' }] } },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(bot.sendImage).toHaveBeenCalledTimes(1);
+      const [target, source] = bot.sendImage!.mock.calls[0]!;
+      expect(target).toBe(groupTarget);
+      expect((source as { localPath: string }).localPath).toContain('a.png');
+    });
+
+    // ⚠️ SDK 的 sendMediaMessage 只透传 msg_id，完全忽略 eventId。
+    // 没有 msgId 就发图 = 变成主动消息，浪费配额且大概率失败。
+    it('没有 msgId（event 型回复目标）时**不发图**，文字照发', async () => {
+      setStickerPathsForTest({ catalogPath: tempCatalog(), assetRoot: 'C:/tmp' });
+      const eventTarget: ReplyTarget = { scope: 'group', targetId: 'group1', msgId: undefined };
+      const { outbound, bot } = setupWithStickers(createRecord(eventTarget));
+
+      outbound.routeSessionEvent({ header: { id: 'sess-qq' } }, {
+        type: 'assistant/message',
+        data: { message: { content: [{ type: 'text', text: '废话，我本来就厉害' }] } },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(bot.sendImage).not.toHaveBeenCalled();
+      expect(bot.sendMarkdown).toHaveBeenCalledWith(eventTarget, '废话，我本来就厉害');
+    });
+
+    it('图库为空时不发图（功能默认关闭的等价状态）', async () => {
+      setStickerPathsForTest({ catalogPath: join(tmpdir(), 'nope-not-exist.json') });
+      const { outbound, bot } = setupWithStickers(createRecord(groupTarget));
+
+      outbound.routeSessionEvent({ header: { id: 'sess-qq' } }, {
+        type: 'assistant/message',
+        data: { message: { content: [{ type: 'text', text: '废话，我本来就厉害' }] } },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(bot.sendImage).not.toHaveBeenCalled();
     });
   });
 });

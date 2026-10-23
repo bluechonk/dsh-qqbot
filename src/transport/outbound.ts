@@ -363,6 +363,19 @@ class OutboundRouter {
   private pickSticker(record: SessionRecord, text: string): Sticker | undefined {
     if (!this.config.stickers.enabled) return undefined;
 
+    // ⚠️ 没有 msgId 就不发图。
+    //
+    // SDK 的 sendMediaMessage 只透传 `msg_id`，**完全忽略 eventId**
+    // （源码：`...(opts?.msgId ? { msg_id: opts.msgId } : {})`）。
+    // 而回复目标可能是 event 型——按钮互动（提问卡片作答、审批）走的就是它。
+    // 那种情况下发图会被当成**主动消息**：浪费按群按月的配额，且大概率直接失败。
+    //
+    // 宁可这次不配图：文字回复照常，只是少一张表情。
+    if (!record.replyTarget.msgId) {
+      this.logger.debug('im-qqbot: sticker skipped (no msgId → would become a proactive message)');
+      return undefined;
+    }
+
     const catalog = getStickerCatalog(true);
     const stickers = catalog.all();
     if (stickers.length === 0) return undefined;

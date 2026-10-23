@@ -13,11 +13,28 @@ let catalog: StickerCatalog | undefined;
 /** sessionKey → 表情发送状态 */
 const states = new Map<string, StickerRuntimeState>();
 
+/**
+ * 图库路径覆盖（仅供测试）。
+ *
+ * 生产路径固定在 `~/.dsh-qqbot/stickers.json`，写死的话整条表情流程
+ * 在测试里只能走到「图库为空」，等于没有集成覆盖。
+ */
+let catalogPathOverride: string | undefined;
+/** 素材根目录覆盖（仅供测试），配合 catalogPathOverride 一起用 */
+let assetRootOverride: string | undefined;
+
+/** 仅供测试：把图库与素材目录指向临时位置；传 undefined 恢复默认 */
+export function setStickerPathsForTest(paths?: { catalogPath?: string; assetRoot?: string }): void {
+  catalogPathOverride = paths?.catalogPath;
+  assetRootOverride = paths?.assetRoot;
+  catalog = undefined;
+}
+
 /** 取图库（惰性创建；enabled=false 时内部会返回空数组） */
 export function getStickerCatalog(enabled: boolean): StickerCatalog {
   if (catalog === undefined) {
     catalog = new StickerCatalog({
-      filePath: pluginDataPath('stickers.json'),
+      filePath: catalogPathOverride ?? pluginDataPath('stickers.json'),
       enabled,
     });
   }
@@ -42,6 +59,8 @@ export function setStickerState(sessionKey: string, state: StickerRuntimeState):
 export function resetStickerRuntime(): void {
   catalog = undefined;
   states.clear();
+  catalogPathOverride = undefined;
+  assetRootOverride = undefined;
 }
 
 /**
@@ -51,5 +70,5 @@ export function resetStickerRuntime(): void {
  * （例如 `deepseek-chan/得意.png`），这样整个素材目录可以整体搬走。
  */
 export function resolveStickerPath(file: string): string {
-  return resolve(pluginDataPath('stickers'), file);
+  return resolve(assetRootOverride ?? pluginDataPath('stickers'), file);
 }
