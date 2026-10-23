@@ -35,7 +35,15 @@ interface LlmServiceLike {
     provider: string,
     model: string,
     signal?: AbortSignal,
-  ): Promise<{ reasoning?: { efforts?: readonly { id: string }[] } }>;
+  ): Promise<{
+    /**
+     * 思考强度能力。三种形态：
+     *   undefined   → 能力未知
+     *   false       → 显式声明的非推理模型（provider 配置 `reasoningEfforts: false`）
+     *   { efforts } → 推理模型，附可选档位
+     */
+    reasoning?: false | { efforts?: readonly { id: string }[] };
+  }>;
 }
 
 /** 模型对思考强度的支持情况（查过一次就缓存） */
@@ -138,12 +146,22 @@ export class ModelResolver {
 
     try {
       const info = await llm.resolveModelInfo(provider, model);
-      const reasoning = info?.reasoning;
-      if (reasoning === undefined) {
+      const reasoning = info?.reasoning as unknown;
+
+      // 三种形态（对齐 dsh-llm 的 LlmResolvedModelInfo.reasoning）：
+      //   undefined → 能力未知
+      //   false     → **显式声明的非推理模型**（provider 配置里 reasoningEfforts: false）
+      //   { efforts } → 推理模型，附可选档位
+      //
+      // `false` 必须单独判：JS 里 `false.efforts` 是 undefined，
+      // 不判就会被当成「支持但没有档位」，打出一条误导性的 warn。
+      if (reasoning === undefined || reasoning === false || reasoning === null) {
         this.reasoningCaps.set(key, { supported: false, efforts: new Set() });
         return;
       }
-      const efforts = new Set((reasoning.efforts ?? []).map((e) => e.id));
+      const efforts = new Set(
+        ((reasoning as { efforts?: readonly { id: string }[] }).efforts ?? []).map((e) => e.id),
+      );
       this.reasoningCaps.set(key, { supported: true, efforts });
     } catch (err) {
       // 保持未知，不缓存；下次还会重试

@@ -88,6 +88,14 @@ describe('reasoningEffort 注入：按模型能力把关', () => {
     expect('reasoningEffort' in (route ?? {})).toBe(false);
   });
 
+  it('provider 声明 reasoningEfforts:false（reasoning===false）→ 不注入', async () => {
+    // dsh-llm-pi-ai 对 `reasoningEfforts: false` 返回 { reasoning: false }。
+    // JS 里 false.efforts 是 undefined，不单独判就会误判成「支持但无档位」，
+    // 打出一条误导性的 warn（说不支持某个档位，其实是模型根本不推理）。
+    const route = await routeOf({ effort: 'off', llm: fakeLlm({ reasoning: false }) });
+    expect('reasoningEffort' in (route ?? {})).toBe(false);
+  });
+
   it('模型有 reasoning 但不支持该档位 → 不注入', async () => {
     const route = await routeOf({
       effort: 'max',
