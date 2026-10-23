@@ -61,7 +61,7 @@ export function hasNoAdminConfigured(admin: AdminConfig): boolean {
 export function buildDenialMessage(admin: AdminConfig): string {
   if (hasNoAdminConfigured(admin)) {
     return [
-      '⚠️ 还没配置主人，所以高权限命令暂时对所有人关闭。',
+      '还没配置主人，所以高权限命令暂时对所有人关闭。',
       '',
       '主人请这样做：',
       '1. 发送 `/whoami` 查看自己的 openid',
@@ -69,7 +69,7 @@ export function buildDenialMessage(admin: AdminConfig): string {
       '3. 重启 DSH 生效',
     ].join('\n');
   }
-  return '⚠️ 只有主人能执行这个命令。';
+  return '只有主人能执行这个命令。';
 }
 
 /**
