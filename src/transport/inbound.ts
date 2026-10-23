@@ -20,8 +20,28 @@ import {
   type MediaKind,
 } from './attachment.ts';
 import { clearGroupHistory } from '../features/history-store.ts';
+import { buildProfileLine, extractAlias, PeopleStore } from '../features/people/index.ts';
+import { pluginDataPath } from '../shared/index.ts';
 import type { ProactiveDecision } from '../features/proactive/types.ts';
 import type { MiddlewareContext } from '@tencent-connect/qqbot-nodejs';
+
+/**
+ * 群友档案存储（进程内单例）
+ *
+ * 惰性创建：没有消息就不碰磁盘。关闭时返回 undefined，调用方全部跳过。
+ */
+let peopleStore: PeopleStore | undefined;
+
+function getPeopleStore(config: ImQQBotConfig): PeopleStore | undefined {
+  if (!config.people.enabled) return undefined;
+  if (peopleStore === undefined) {
+    peopleStore = new PeopleStore({
+      filePath: pluginDataPath('people.json'),
+      enabled: true,
+    });
+  }
+  return peopleStore;
+}
 
 // ── 类型定义 ──
 
@@ -107,8 +127,26 @@ export async function handleInbound(
     msgId: msg.messageId,
   };
 
+  // ── 群友档案：认人 + 记称呼 ──
+  // 零成本启发式：不从模型要数据（qqchat 是零工具预设，模型没法调工具记人），
+  // 只从消息信封取昵称、从自我介绍句式抽别名。
+  const people = getPeopleStore(config);
+  const alias = extractAlias(msg.content ?? '');
+  const profile = people?.touch({
+    appId: config.appId,
+    scope,
+    scopeId: scope === 'group' ? (msg.groupOpenid ?? msg.senderId) : 'c2c',
+    openid: msg.senderId,
+    name: msg.senderName,
+    alias,
+  });
+  const profileLine = buildProfileLine(profile, {
+    isGroup: scope === 'group',
+    maxAliases: config.people.maxAliases,
+  });
+
   // ── 组装 agentBody（下载结果经 mwState.downloadedFiles 提供） ──
-  const agentBody = assembleAgentBody(msg, mwState, scope, logger);
+  const agentBody = assembleAgentBody(msg, mwState, scope, logger, profileLine);
 
   if (!agentBody) return;
 
@@ -165,6 +203,7 @@ function assembleAgentBody(
   state: MiddlewareState,
   scope: ChatScope,
   logger: Logger,
+  profileLine = '',
 ): string | null {
   const isGroup = scope === 'group';
   const wasMentioned = state.mention?.wasMentioned ?? false;
@@ -178,12 +217,11 @@ function assembleAgentBody(
 
   const dynamicCtx = buildDynamicCtx(msg, state);
 
-  // 自主接话：这条没点名她，是系统粗筛后认为可能值得接话 → 补一段背景说明
-  const proactiveHint = buildProactiveHint(state.proactive);
+  // 前置旁白：先「你是谁」（群友档案），再「这条为什么值得接」（自主接话）
+  const hints = `${profileLine}${buildProactiveHint(state.proactive)}`;
 
-  const base = proactiveHint
-    ? `${proactiveHint}${dynamicCtx ? `${dynamicCtx}${userMessage}` : userMessage}`
-    : (dynamicCtx ? `${dynamicCtx}${userMessage}` : userMessage);
+  const inner = dynamicCtx ? `${dynamicCtx}${userMessage}` : userMessage;
+  const base = hints ? `${hints}${inner}` : inner;
   const agentBody = buildAgentBody(base, state.history, isGroup, wasMentioned);
 
   return agentBody;

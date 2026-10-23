@@ -118,6 +118,8 @@ Configuration lives in the `im-qqbot` entry of the profile's `cordis.patch.yml`,
 | `proactive.maxPerHour` | number | `6` | Proactive replies per group per hour, 0 means unlimited |
 | `proactive.minLength` | number | `6` | Minimum text length to be considered |
 | `proactive.observer` | boolean | `true` | Record gate decisions |
+| `people.enabled` | boolean | `true` | People profiles (nicknames, how they like to be called, interaction count) |
+| `people.maxAliases` | number | `2` | How many aliases to include in the injected hint |
 | `replyDelayMs` | number | `1200` | Base reply delay (ms), 0 disables it |
 | `replyDelayPerCharMs` | number | `80` | Extra reply delay per character (ms) |
 | `replyDelayJitterMs` | number | `1500` | Random jitter cap for reply delay (ms) |

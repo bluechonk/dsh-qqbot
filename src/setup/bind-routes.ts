@@ -19,7 +19,7 @@ import {
   type SetupCredentials,
 } from './persist.ts';
 import { getProfileDir } from '../shared/index.ts';
-import { AccessControlSchema, ProactiveSchema, REASONING_EFFORT_VALUES as REASONING_EFFORT_VALUES_FROM_CONFIG } from '../config.ts';
+import { AccessControlSchema, PeopleSchema, ProactiveSchema, REASONING_EFFORT_VALUES as REASONING_EFFORT_VALUES_FROM_CONFIG } from '../config.ts';
 import {
   BIND_CONFIG_PATH,
   BIND_MANUAL_PATH,
@@ -112,7 +112,7 @@ const EDITABLE_CONFIG_KEYS = new Set([
   'requireMention', 'streaming', 'showToolResults', 'debug',
   'provider', 'model', 'preset', 'reasoningEffort',
   'groupPrompt', 'directPrompt',
-  'access', 'proactive',
+  'access', 'proactive', 'people',
   'replyDelayMs', 'replyDelayPerCharMs', 'replyDelayJitterMs', 'replyDelayMaxMs',
 ]);
 
@@ -145,6 +145,7 @@ const EDITABLE_CONFIG_SCHEMAS: Record<string, (value: unknown) => unknown> = {
   directPrompt: stringSchema('directPrompt'),
   access: (v) => AccessControlSchema(v as never),
   proactive: (v) => ProactiveSchema(v as never),
+  people: (v) => PeopleSchema(v as never),
   replyDelayMs: numberSchema('replyDelayMs', 0, 60000),
   replyDelayPerCharMs: numberSchema('replyDelayPerCharMs', 0, 1000),
   replyDelayJitterMs: numberSchema('replyDelayJitterMs', 0, 60000),
