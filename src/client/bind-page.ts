@@ -50,7 +50,6 @@ function usePanelStyles(): void {
 .imqb-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 .imqb-link { font-size: 13px; opacity: 0.85; color: var(--dsw-alias-brand, #4d6bfe); text-decoration: none; }
 .imqb-link:hover { text-decoration: underline; }
-.imqb-icon { font-size: 32px; line-height: 1; }
 .imqb-qr { border-radius: 10px; background: #fff; padding: 10px; max-width: 100%; }
 .imqb-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 .imqb-btn, .imqb-pill {
@@ -97,7 +96,6 @@ function usePanelStyles(): void {
 /* 紧凑状态视图（已绑定 / 过渡态）：设置行风格，无居中大卡留白 */
 .imqb-status { display: flex; flex-direction: column; text-align: left; font-size: 14px; }
 .imqb-status-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
-.imqb-status-icon { font-size: 24px; line-height: 1; flex: none; }
 .imqb-qqicon {
   flex: none; display: block; border-radius: 8px;
   background: #fff; /* 深色企鹅 logo 需浅底，暗色主题下保持可见 */
@@ -273,7 +271,6 @@ function ManualForm({ initialAppId }: { initialAppId?: string }): ReactNode {
   if (result !== null && result.ok) {
     return createElement('div', { className: 'imqb-status' },
       createElement('div', { className: 'imqb-status-row' },
-        createElement('div', { className: 'imqb-status-icon' }, '✅'),
         createElement('div', { className: 'imqb-status-meta' },
           createElement('p', { className: 'imqb-status-title' }, result.message ?? '凭据已保存'),
           createElement('p', { className: 'imqb-status-sub' }, '插件将自动重载；稍后即可开始对话'),
@@ -348,7 +345,6 @@ function BoundView({ appId, recheck }: { appId: string; recheck: () => void }): 
     // 触发（状态停留 bound），用户仍有「刷新状态」出口而不是死胡同
     return createElement('div', { className: 'imqb-status' },
       createElement('div', { className: 'imqb-status-row' },
-        createElement('div', { className: 'imqb-status-icon' }, unbindResult.ok ? '👋' : '⚠️'),
         createElement('div', { className: 'imqb-status-meta' },
           createElement('p', { className: 'imqb-status-title' }, unbindResult.message),
         ),
@@ -430,7 +426,6 @@ export function BindPanelBody(): ReactNode {
 
   if (gone) {
     return createElement('div', { className: 'imqb-panel' },
-      createElement('div', { className: 'imqb-icon' }, '❔'),
       createElement('p', { className: 'imqb-hint' }, '插件未启用，或当前版本不支持端内配置'),
     );
   }
@@ -448,7 +443,7 @@ export function BindPanelBody(): ReactNode {
         createElement('div', { className: 'imqb-scanned' },
           createElement('img', { src: lastQr, alt: 'QQ 扫码二维码', width: 220, height: 220, className: 'imqb-scanned-qr' }),
           createElement('div', { className: 'imqb-scanned-veil' },
-            createElement('p', { className: 'imqb-scanned-title' }, '✅ 扫码成功'),
+            createElement('p', { className: 'imqb-scanned-title' }, '扫码成功'),
             createElement('p', { className: 'imqb-scanned-sub' }, '正在连接机器人，稍候…'),
           ),
         ),
@@ -456,7 +451,6 @@ export function BindPanelBody(): ReactNode {
     }
     return createElement('div', { className: 'imqb-status' },
       createElement('div', { className: 'imqb-status-row' },
-        createElement('div', { className: 'imqb-status-icon' }, '🎉'),
         createElement('div', { className: 'imqb-status-meta' },
           createElement('p', { className: 'imqb-status-title' }, '扫码成功'),
           createElement('p', { className: 'imqb-status-sub' }, '凭据已保存，插件正在重载，稍后即可开始对话'),
@@ -467,7 +461,6 @@ export function BindPanelBody(): ReactNode {
 
   if (state.phase === 'failed') {
     return createElement('div', { className: 'imqb-panel' },
-      createElement('div', { className: 'imqb-icon' }, '⚠️'),
       createElement('p', { className: 'imqb-title' }, '绑定失败'),
       createElement('p', { className: 'imqb-hint' }, state.reason),
       createElement('div', { className: 'imqb-row' },

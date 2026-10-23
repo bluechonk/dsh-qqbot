@@ -141,7 +141,7 @@ export class BindingService {
       }
       if (this.disposed) return null;
       if (credentials !== null) {
-        console.log(`\n✔ 扫码绑定成功! AppID: ${credentials.appId}\n`);
+        console.log(`\n扫码绑定成功! AppID: ${credentials.appId}\n`);
         this.setPhase({ kind: 'saving' });
         return credentials;
       }

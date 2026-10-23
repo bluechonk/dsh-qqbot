@@ -287,7 +287,7 @@ class OutboundRouter {
 
     const failure = extractTurnError(event.reason);
     if (failure !== undefined && !SILENT_TURN_ERROR_CODES.has(failure.code)) {
-      void this.send(record, `⚠️ 本轮异常结束\n\`${failure.code}\`: ${failure.message}`, 'sendTurnEndError');
+      void this.send(record, `本轮异常结束\n\`${failure.code}\`: ${failure.message}`, 'sendTurnEndError');
     }
 
     // ⚠️ blocked：这一轮**根本没跑**（宿主 preStep 直接拒绝），既不产出回复也不报错。

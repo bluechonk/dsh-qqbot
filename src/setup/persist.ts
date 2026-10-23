@@ -82,7 +82,7 @@ export function persistCredentialsToProfile(
     const output = `# QQ 机器人凭据（扫码绑定自动生成）\n${yaml.dump(entries)}`;
     mkdirSync(dir, { recursive: true });
     writeFileSync(patchPath, output, 'utf8');
-    log.info(`✔ 凭据已写入: ${patchPath}`);
+    log.info(`凭据已写入: ${patchPath}`);
     log.info(`  下次启动将自动使用保存的凭据`);
     return true;
   } catch (err) {
@@ -126,7 +126,7 @@ export function removeCredentialsFromProfile(
     // 解绑后状态会一直停留在 bound
     mkdirSync(profileDir, { recursive: true });
     writeFileSync(patchPath, yaml.dump(entries), 'utf8');
-    log.info(`✔ 凭据已移除: ${patchPath}`);
+    log.info(`凭据已移除: ${patchPath}`);
     log.info(`  插件将重新进入绑定流程`);
     return true;
   } catch (err) {
@@ -181,7 +181,7 @@ export function updateProfileConfig(
 
     mkdirSync(profileDir, { recursive: true });
     writeFileSync(patchPath, yaml.dump(entries), 'utf8');
-    log.info(`✔ 配置已保存: ${patchPath}`);
+    log.info(`配置已保存: ${patchPath}`);
     log.info(`  插件将自动重载`);
     return true;
   } catch (err) {
