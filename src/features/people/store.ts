@@ -10,6 +10,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { PersonProfile } from './format.ts';
+import { mergeFact, type PersonMemory } from './memory.ts';
 import type { Logger } from '../../types.ts';
 
 /** 档案文件结构 */
@@ -98,6 +99,63 @@ export class PeopleStore {
     this.evictIfNeeded(file);
     this.flush();
     return profile;
+  }
+
+  /** 读一个人的长期记忆（不产生写入） */
+  memoryOf(params: {
+    appId: string;
+    scope: 'group' | 'c2c';
+    scopeId: string;
+    openid: string;
+  }): PersonMemory | undefined {
+    if (!this.enabled) return undefined;
+    const file = this.load();
+    return file.people[`${params.appId}|${params.scope}:${params.scopeId}|${params.openid}`]?.memory;
+  }
+
+  /**
+   * 并入摘要产出的事实：逐条 mergeFact（去重 + 封顶），有真实变化才落盘。
+   *
+   * 返回三类计数，调用方据此留痕；档案不存在或未启用返回 undefined。
+   * 全部被去重吸收（added + refreshed === 0）时不写盘——下一次摘要
+   * 会重复消化同一段近期对话，由去重吸收，这正是不要 seq 断点的意义。
+   */
+  mergeMemoryFacts(
+    params: {
+      appId: string;
+      scope: 'group' | 'c2c';
+      scopeId: string;
+      openid: string;
+    },
+    texts: readonly string[],
+    maxFacts: number,
+  ): { added: number; refreshed: number; skipped: number } | undefined {
+    if (!this.enabled) return undefined;
+    const key = `${params.appId}|${params.scope}:${params.scopeId}|${params.openid}`;
+    const file = this.load();
+    const profile = file.people[key];
+    if (!profile) return undefined;
+
+    const now = Date.now();
+    let memory: PersonMemory = profile.memory ?? { version: 1, facts: [] };
+    let added = 0;
+    let refreshed = 0;
+    let skipped = 0;
+    for (const text of texts) {
+      const r = mergeFact(memory, text, now, maxFacts);
+      memory = r.memory;
+      if (r.kind === 'added') added += 1;
+      else if (r.kind === 'refreshed') refreshed += 1;
+      else skipped += 1;
+    }
+
+    if (added + refreshed === 0) return { added, refreshed, skipped };
+
+    profile.memory = { ...memory, version: 1, summarizedAt: now };
+    this.dirty = true;
+    this.evictIfNeeded(file);
+    this.flush();
+    return { added, refreshed, skipped };
   }
 
   /** 读一个人的档案（不产生写入） */
