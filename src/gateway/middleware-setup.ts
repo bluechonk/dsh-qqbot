@@ -30,6 +30,7 @@ import { proactiveGate } from '../middleware/proactive-gate.ts';
 import type { ProactiveCooldown } from '../features/proactive/cooldown.ts';
 import type { ProactiveObserver } from '../features/proactive/observer.ts';
 import type { GroupActivity } from '../features/proactive/activity.ts';
+import type { IdleTracker } from '../features/idle-topic/index.ts';
 
 export function setupMiddlewares(
   bot: QQBot,
@@ -40,6 +41,7 @@ export function setupMiddlewares(
     cooldown: ProactiveCooldown;
     observer: ProactiveObserver;
     activity: GroupActivity;
+    idle: IdleTracker;
   },
 ): void {
   // 1. 错误兜底（最外层洋葱皮）
@@ -94,6 +96,7 @@ export function setupMiddlewares(
     cooldown: proactive.cooldown,
     observer: proactive.observer,
     activity: proactive.activity,
+    idle: proactive.idle,
   }));
 
   // 6. 内容清洗（去 @marker、表情标签、多余空白）

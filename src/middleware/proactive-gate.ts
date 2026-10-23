@@ -19,6 +19,7 @@ import type { ProactiveDecision } from '../features/proactive/types.ts';
 import type { ProactiveCooldown } from '../features/proactive/cooldown.ts';
 import type { ProactiveObserver } from '../features/proactive/observer.ts';
 import type { GroupActivity } from '../features/proactive/activity.ts';
+import type { IdleTracker } from '../features/idle-topic/index.ts';
 
 /** 门控选项 */
 export interface ProactiveGateOptions {
@@ -28,6 +29,8 @@ export interface ProactiveGateOptions {
   observer: ProactiveObserver;
   /** 群活跃度（M1 时机特征的数据源） */
   activity: GroupActivity;
+  /** 冷场计时（M8 数据源） */
+  idle: IdleTracker;
 }
 
 /** 消息上的 mention 状态（SDK mentionGate 写入） */
@@ -54,7 +57,7 @@ function detectMentionMarker(content: string, appId: string): boolean {
 }
 
 export function proactiveGate(options: ProactiveGateOptions) {
-  const { config, logger, cooldown, observer, activity } = options;
+  const { config, logger, cooldown, observer, activity, idle } = options;
   const proactive = config.proactive;
   const gate = createLexicalGate({ minLength: proactive.minLength, minScore: proactive.minScore });
   const appId = config.appId;
@@ -87,6 +90,11 @@ export function proactiveGate(options: ProactiveGateOptions) {
       const rawEventType = msg.rawEventType;
       const senderId = msg.senderId ?? '';
       const rawContent = msg.content ?? '';
+
+      // 活跃度与冷场计时：**任何**群消息都要记（含被 @ 的），
+      // 因为它们回答的是「这个群现在忙不忙」，与「这条要不要回」是两回事。
+      activity.record(groupId, senderId);
+      idle.recordMessage(groupId);
 
       // 被 @ → 必回。
       // ⚠️ 不只看 SDK 写的 state.mention：那个判定依赖 rawEventType 与
@@ -123,9 +131,7 @@ export function proactiveGate(options: ProactiveGateOptions) {
 
       const text = stripMentions(rawContent);
 
-      // 时机特征（M1）：先把这条记进活跃度，再算当前窗口的特征。
-      // 顺序要「先记后算」——否则连发第一条永远数不到自己。
-      activity.record(groupId, senderId);
+      // 时机特征（M1）：活跃度已在入口记过，这里只算当前窗口特征。
       const signals = activity.signals(groupId);
 
       const verdict = gate.evaluate({ text, mentioned: false, mentionedOthers, signals });
