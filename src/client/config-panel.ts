@@ -15,7 +15,7 @@
  * 类字段走 profile patch / 环境变量。
  */
 import { createElement, Fragment, useCallback, useEffect, useState, type CSSProperties, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
-import { BIND_CONFIG_PATH } from '../shared/bind-protocol.ts';
+import { bindConfigPath, DEFAULT_BIND_NS } from '../shared/bind-protocol.ts';
 
 /** 访问控制配置（与 src/config.ts 的 AccessControlConfig 对应的局部投影） */
 interface AccessControlWire {
@@ -332,7 +332,9 @@ function sameValue(a: unknown, b: unknown): boolean {
  * 保存仅提交变更键（服务端按白名单合并），保存成功后提示
  * HMR 重载语义（进行中的机器人会话将重置）。
  */
-export function ConfigPanel(): ReactNode {
+export function ConfigPanel(props: { settingsNs?: string }): ReactNode {
+  const settingsNs = props.settingsNs ?? DEFAULT_BIND_NS;
+  const configPath = bindConfigPath(settingsNs);
   useConfigPanelStyles();
   const [initial, setInitial] = useState<ConfigWire | null>(null);
   const [form, setForm] = useState<ConfigWire | null>(null);
@@ -342,7 +344,7 @@ export function ConfigPanel(): ReactNode {
 
   useEffect(() => {
     let stopped = false;
-    void fetch(BIND_CONFIG_PATH, { cache: 'no-store' })
+    void fetch(configPath, { cache: 'no-store' })
       .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const body = (await res.json()) as { config: ConfigWire };
@@ -354,7 +356,7 @@ export function ConfigPanel(): ReactNode {
         if (!stopped) setLoadError(err instanceof Error ? err.message : String(err));
       });
     return () => { stopped = true; };
-  }, []);
+  }, [configPath]);
 
   const patch = useCallback(<K extends keyof ConfigWire>(key: K, value: ConfigWire[K]): void => {
     setForm((current) => current === null ? current : { ...current, [key]: value });
@@ -390,7 +392,7 @@ export function ConfigPanel(): ReactNode {
     }
 
     setBusy(true);
-    void fetch(BIND_CONFIG_PATH, {
+    void fetch(configPath, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(changed),

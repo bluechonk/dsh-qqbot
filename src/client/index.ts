@@ -13,10 +13,11 @@
  * 声明访问（声明缺失时插件保持 inactive，不阻塞浏览器启动）。
  */
 import type { Context } from '@deepseek-ai/cordis';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useState, type ReactNode } from 'react';
 import { BIND_STATE_PATH } from '../shared/bind-protocol.ts';
 import { BindPanelBody } from './bind-page.ts';
 import { ConfigPanel } from './config-panel.ts';
+import { InstanceList } from './instance-list.ts';
 
 export const name = 'im-qqbot-client';
 export const inject = ['slots', 'sidebarRight', 'sidebarRightTabs'];
@@ -77,9 +78,12 @@ function BindGuideIcon(): ReactNode {
 
 /** 设置页「QQ Bot」栏目：面板常驻展示绑定状态 */
 function QQBotSettingsSection(): ReactNode {
+  // 当前编辑哪个实例的配置（多机器人时切换；默认第一个实例）
+  const [selectedNs, setSelectedNs] = useState<string>('im-qqbot');
   return createElement('div', null,
+    createElement(InstanceList, { selectedNs, onSelect: setSelectedNs }),
     createElement(BindPanelBody),
-    createElement(ConfigPanel),
+    createElement(ConfigPanel, { settingsNs: selectedNs }),
   );
 }
 
