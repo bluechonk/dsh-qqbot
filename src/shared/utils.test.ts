@@ -7,10 +7,10 @@
  * 3. 开发模式源码目录（无命中返回 null）
  */
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, it, afterEach, beforeEach } from 'vitest';
-import { getProfileDir } from './utils.ts';
+import { getProfileDir, pluginDataDir, pluginDataPath } from './utils.ts';
 
 const tempDirs: string[] = [];
 
@@ -168,5 +168,29 @@ describe('getProfileDir', () => {
     // 指向不存在的目录时不可信，继续往下退
     process.env.DSH_PROFILE_DIR = join(root, 'nope');
     expect(getProfileDir(undefined, elsewhere)).toBeNull();
+  });
+});
+
+describe('pluginDataDir / pluginDataPath', () => {
+  it('不传 ns 时保持 ~/.dsh-qqbot（单实例行为逐字不变）', () => {
+    expect(pluginDataDir()).toBe(resolve(homedir(), '.dsh-qqbot'));
+    expect(pluginDataDir(undefined)).toBe(pluginDataDir());
+  });
+
+  it('多实例按 ns 分一层目录', () => {
+    expect(pluginDataDir('im-qqbot-2')).toBe(resolve(homedir(), '.dsh-qqbot', 'im-qqbot-2'));
+  });
+
+  it('空白 ns 视为未设置（回落默认目录）', () => {
+    expect(pluginDataDir('   ')).toBe(pluginDataDir());
+  });
+
+  it('pluginDataPath 与 pluginDataDir 一致', () => {
+    expect(pluginDataPath('people.json')).toBe(resolve(pluginDataDir(), 'people.json'));
+    expect(pluginDataPath('people.json', 'im-qqbot-2')).toBe(resolve(pluginDataDir('im-qqbot-2'), 'people.json'));
+  });
+
+  it('不同实例的数据文件互不重叠（多个机器人是不同的"人"）', () => {
+    expect(pluginDataPath('people.json', 'im-qqbot')).not.toBe(pluginDataPath('people.json', 'im-qqbot-2'));
   });
 });
