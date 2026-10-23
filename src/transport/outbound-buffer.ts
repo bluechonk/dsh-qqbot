@@ -83,9 +83,15 @@ export class OutboundBuffer {
     this.writer?.reset();
   }
 
-  /** 发送所有累积文本：流式优先，降级静态 */
-  public async flush(): Promise<void> {
-    if (this.flushing || !this.buffer.trim()) return;
+  /**
+   * 发送所有累积文本：流式优先，降级静态。
+   *
+   * @returns 是否**真的发出去了**。调用方据此决定要不要做后续记账
+   *          （防复读流水、表情包、「她刚说过话」通知）——
+   *          跳过（[skip]）或失败时返回 false，不能当成说过话。
+   */
+  public async flush(): Promise<boolean> {
+    if (this.flushing || !this.buffer.trim()) return false;
     this.flushing = true;
 
     try {
@@ -93,23 +99,31 @@ export class OutboundBuffer {
       if (isSkipReply(this.buffer)) {
         this.logger.info('im-qqbot: buffered reply skipped by model (silence marker)');
         this.writer?.abort();
-        return;
+        return false;
       }
 
       if (this.writer) {
         await this.writer.finish();
-        // 流式成功（未降级）→ 直接返回
-        if (!this.writer.shouldFallback) return;
+        // 流式成功（未降级）→ 内容已送达
+        if (!this.writer.shouldFallback) return true;
       }
 
       // 降级：静态发送（writer 不存在 or 流式失败）
-      if (this.beforeSend && !(await this.beforeSend(this.buffer))) return;
+      if (this.beforeSend && !(await this.beforeSend(this.buffer))) return false;
       const chunks = chunkMarkdownText(this.buffer, this.limit);
+      let sentAny = false;
       for (const chunk of chunks) {
-        await this.bot.sendMarkdown(this.record.replyTarget, chunk);
+        try {
+          await this.bot.sendMarkdown(this.record.replyTarget, chunk);
+          sentAny = true;
+        } catch (err) {
+          this.logger.error(`im-qqbot: sendMarkdown failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
+      return sentAny;
     } catch (err) {
       this.logger.error(`im-qqbot: flush failed: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
     } finally {
       this.buffer = '';
       this.flushing = false;

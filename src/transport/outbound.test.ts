@@ -4,6 +4,7 @@ import type { QQBotSender, StreamSessionLike } from './outbound-buffer.ts';
 import type { SessionManager, SessionRecord } from '../session/index.ts';
 import type { ImQQBotConfig } from '../config.ts';
 import type { Logger, ReplyTarget } from '../types.ts';
+import { getReplyHistory, resetReplyHistory } from '../features/anti-repeat/index.ts';
 
 function createLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -40,6 +41,14 @@ function createConfig(overrides?: Partial<ImQQBotConfig>): ImQQBotConfig {
     streaming: true,
     textChunkLimit: 4500,
     showToolResults: false,
+    // 子配置必须给全：出站路径会读它们（防复读流水、表情包、回复延迟），
+    // 缺了会以「读 undefined.enabled」的形式炸在测试里。
+    antiRepeat: { enabled: true, historySize: 5 },
+    stickers: { enabled: false, maxTextReplies: 3, cooldownMs: 600_000 },
+    replyDelayMs: 0,
+    replyDelayPerCharMs: 0,
+    replyDelayJitterMs: 0,
+    replyDelayMaxMs: 0,
     ...overrides,
   } as unknown as ImQQBotConfig;
 }
@@ -180,5 +189,48 @@ describe('OutboundRouter.routeStreamFrame', () => {
 
     expect(bot.openStream).toHaveBeenCalledTimes(1);
     expect(session.update).toHaveBeenCalledWith('legacy');
+  });
+
+  // ── 流式路径的记账回归 ──
+  // 流式收尾走 OutboundBuffer.flush()，**不经过 send()**。
+  // 曾经因此漏掉防复读流水：开了流式就静默失效，且没有任何报错。
+  describe('流式路径的后续记账', () => {
+    /** 走一遍「流式 → assistant/message 收尾」 */
+    async function streamThenFinish(outbound: ReturnType<typeof setup>['outbound'], text: string) {
+      outbound.routeStreamFrame('sess-qq', start('a1'));
+      outbound.routeStreamFrame('sess-qq', delta('a1', text));
+      await vi.advanceTimersByTimeAsync(200);
+      outbound.routeSessionEvent({ header: { id: 'sess-qq' } }, {
+        type: 'assistant/message',
+        data: { message: { content: [{ type: 'text', text }] } },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    }
+
+    beforeEach(() => resetReplyHistory());
+
+    it('流式收尾后记入防复读流水', async () => {
+      const { outbound } = setup();
+      await streamThenFinish(outbound, 'hello');
+      expect(getReplyHistory().list('k')).toEqual(['hello']);
+    });
+
+    it('被模型沉默（[skip]）时**不**记入流水', async () => {
+      const { outbound } = setup();
+      await streamThenFinish(outbound, '[skip]');
+      expect(getReplyHistory().list('k')).toEqual([]);
+    });
+
+    it('群聊流式被禁用，走静态发送也会记账', async () => {
+      const { outbound, bot } = setup({ record: createRecord(groupTarget) });
+      outbound.routeSessionEvent({ header: { id: 'sess-qq' } }, {
+        type: 'assistant/message',
+        data: { message: { content: [{ type: 'text', text: 'group reply' }] } },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bot.sendMarkdown).toHaveBeenCalledWith(groupTarget, 'group reply');
+      expect(getReplyHistory().list('k')).toEqual(['group reply']);
+    });
   });
 });

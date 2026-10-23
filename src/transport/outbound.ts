@@ -210,8 +210,16 @@ class OutboundRouter {
   private onMessage(sessionId: string, record: SessionRecord, event: MessageEvent): void {
     const buffer = this.buffers.get(sessionId);
     if (buffer !== undefined && buffer.text.trim()) {
-      void buffer.flush();
+      const streamedText = buffer.text;
       this.buffers.delete(sessionId);
+      // ⚠️ 流式路径**不走 send()**，必须在这里补做后续记账：
+      // 否则开了流式（私聊）时，防复读 / 表情包 / 「她刚说过话」会全部静默失效。
+      void buffer.flush().then((delivered) => {
+        if (!delivered) return; // [skip] 或发送失败 → 不算说过话
+        this.afterReplySent(record, streamedText);
+        // 文字已经流出去了，只能追加表情（无法替代）
+        void this.appendSticker(record, streamedText);
+      });
       return;
     }
 
@@ -322,14 +330,29 @@ class OutboundRouter {
       setStickerState(record.sessionKey, afterTextReply(getStickerState(record.sessionKey)));
     }
 
+    // 防复读 + 时机特征：两条发送路径（send / 流式 flush）共用同一套记账
+    if (mimicDelay && sentAny) this.afterReplySent(record, text);
+  }
+
+  /**
+   * 回复送达后的统一记账。
+   *
+   * 两条发送路径都必须调用，否则会出现「开了流式就静默失效」的差异：
+   * 静态发送走 send()，流式走 OutboundBuffer.flush()，两者互不相通。
+   */
+  private afterReplySent(record: SessionRecord, text: string): void {
     // 防复读：只记**真正发出去的正常回复**（工具结果/错误提示不算她的话）
-    if (mimicDelay && sentAny && this.config.antiRepeat.enabled) {
+    if (this.config.antiRepeat.enabled) {
       getReplyHistory().record(record.sessionKey, text);
     }
     // 时机特征：通知「她刚在群里说过话」，让门控知道别连珠炮
-    if (mimicDelay && sentAny && record.scope === 'group') {
-      this.onBotSpoke?.(record.peerId);
-    }
+    if (record.scope === 'group') this.onBotSpoke?.(record.peerId);
+  }
+
+  /** 流式路径专用：文字已经流出去了，只能追加表情，无法替代 */
+  private async appendSticker(record: SessionRecord, text: string): Promise<void> {
+    const sticker = this.pickSticker(record, text);
+    if (sticker !== undefined) await this.sendSticker(record, sticker, '');
   }
 
   /**
