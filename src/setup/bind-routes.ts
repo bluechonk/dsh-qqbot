@@ -23,9 +23,22 @@ import { AccessControlSchema, AdminSchema, AntiRepeatSchema, PeopleSchema, Proac
 import {
   bindConfigPath, bindManualPath, bindRefreshPath, bindStatePath, bindUnbindPath,
   BIND_CONFIG_PATH, BIND_MANUAL_PATH, BIND_REFRESH_PATH, BIND_STATE_PATH, BIND_UNBIND_PATH,
-  DEFAULT_BIND_NS,
+  BIND_PATH_PREFIX, DEFAULT_BIND_NS,
   type BindStateWire,
 } from '../shared/bind-protocol.ts';
+import {
+  addInstance,
+  listInstances,
+  profilePatchPath,
+  removeInstance,
+  setInstanceEnabled,
+} from '../features/instance-registry.ts';
+
+/** 实例管理路由（固定挂在默认实例路径下，不按实例分） */
+const INSTANCE_LIST_PATH = `${BIND_PATH_PREFIX}/${DEFAULT_BIND_NS}/instances`;
+const INSTANCE_ADD_PATH = `${INSTANCE_LIST_PATH}/add`;
+const INSTANCE_REMOVE_PATH = `${INSTANCE_LIST_PATH}/remove`;
+const INSTANCE_TOGGLE_PATH = `${INSTANCE_LIST_PATH}/toggle`;
 
 // 协议单一来源：shared/bind-protocol.ts（类型 + 路径函数，客户端共用）
 export {
@@ -247,6 +260,121 @@ export function registerBindRoutes(
   ];
   logger.info(`im-qqbot: 端内绑定页已就绪: ${bindStatePath(ns)}`);
   return () => { for (const dispose of disposers) dispose(); };
+}
+
+/**
+ * 实例管理路由 —— 多机器人的列表 / 新增 / 删除 / 启停
+ *
+ * 路径固定在 `/qqbot/im-qqbot/instances`（**不按实例分**）：
+ * 这是「管理所有实例」的入口，由默认实例提供，避免每个实例各注册一份。
+ *
+ * 写操作会改 profile patch → 宿主 HMR 重载 → 新实例起来 / 旧实例下去。
+ */
+export function registerInstanceRoutes(
+  webServer: WebServerLike,
+  logger: Logger,
+  options: { profileDir?: string | null },
+): () => void {
+  const patchPath = options.profileDir ? profilePatchPath(options.profileDir) : undefined;
+
+  const read = (): unknown => {
+    if (patchPath === undefined) throw new Error('无法定位 profile 目录');
+    return listInstances(patchPath);
+  };
+
+  const disposers = [
+    webServer.register({
+      kind: 'exact',
+      path: INSTANCE_LIST_PATH,
+      handler: (req, res) => {
+        if (!trusted(req)) { sendJson(res, 403, { error: 'forbidden' }); return; }
+        if (req.method !== 'GET') { sendJson(res, 405, { error: 'method not allowed' }); return; }
+        try {
+          sendJson(res, 200, { instances: read() });
+        } catch (err) {
+          sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        }
+      },
+    }),
+    webServer.register({
+      kind: 'exact',
+      path: INSTANCE_ADD_PATH,
+      handler: async (req, res) => {
+        if (!trusted(req)) { sendJson(res, 403, { error: 'forbidden' }); return; }
+        if (req.method !== 'POST') { sendJson(res, 405, { error: 'method not allowed' }); return; }
+        let botName: string | undefined;
+        try {
+          const body = (await readJsonBody(req)) as Record<string, unknown> | null;
+          if (body && typeof body.botName === 'string' && body.botName.trim()) {
+            botName = body.botName.trim().slice(0, 64);
+          }
+        } catch {
+          // 无 body / 非法 body 视为不指定显示名
+        }
+        if (patchPath === undefined) { sendJson(res, 500, { error: '无法定位 profile 目录' }); return; }
+        const id = addInstance(patchPath, botName);
+        if (id === null) { sendJson(res, 409, { error: '实例 id 冲突' }); return; }
+        logger.info(`im-qqbot: 新增实例 ${id}`);
+        sendJson(res, 200, { ok: true, id });
+      },
+    }),
+    webServer.register({
+      kind: 'exact',
+      path: INSTANCE_REMOVE_PATH,
+      handler: async (req, res) => {
+        if (!trusted(req)) { sendJson(res, 403, { error: 'forbidden' }); return; }
+        if (req.method !== 'POST') { sendJson(res, 405, { error: 'method not allowed' }); return; }
+        const settingsNs = await readInstanceNs(req);
+        if (settingsNs === undefined) { sendJson(res, 400, { error: '缺少 settingsNs' }); return; }
+        if (patchPath === undefined) { sendJson(res, 500, { error: '无法定位 profile 目录' }); return; }
+        const removed = removeInstance(patchPath, settingsNs);
+        if (!removed) { sendJson(res, 409, { error: '实例不存在或为默认实例（不可删除）' }); return; }
+        logger.info(`im-qqbot: 移除实例 ${settingsNs}`);
+        sendJson(res, 200, { ok: true });
+      },
+    }),
+    webServer.register({
+      kind: 'exact',
+      path: INSTANCE_TOGGLE_PATH,
+      handler: async (req, res) => {
+        if (!trusted(req)) { sendJson(res, 403, { error: 'forbidden' }); return; }
+        if (req.method !== 'POST') { sendJson(res, 405, { error: 'method not allowed' }); return; }
+        let settingsNs: string | undefined;
+        let enabled: boolean | undefined;
+        try {
+          const body = (await readJsonBody(req)) as Record<string, unknown> | null;
+          if (body && typeof body.settingsNs === 'string') settingsNs = body.settingsNs;
+          if (body && typeof body.enabled === 'boolean') enabled = body.enabled;
+        } catch {
+          // 落到下面的参数校验
+        }
+        if (settingsNs === undefined || enabled === undefined) {
+          sendJson(res, 400, { error: '需要 settingsNs 与 enabled' });
+          return;
+        }
+        if (patchPath === undefined) { sendJson(res, 500, { error: '无法定位 profile 目录' }); return; }
+        const ok = setInstanceEnabled(patchPath, settingsNs, enabled);
+        if (!ok) { sendJson(res, 409, { error: '实例不存在' }); return; }
+        logger.info(`im-qqbot: 实例 ${settingsNs} ${enabled ? '启用' : '停用'}`);
+        sendJson(res, 200, { ok: true });
+      },
+    }),
+  ];
+  logger.info(`im-qqbot: 实例管理路由已就绪: ${INSTANCE_LIST_PATH}`);
+  return () => { for (const dispose of disposers) dispose(); };
+}
+
+/** 从请求体读 settingsNs（remove 用） */
+async function readInstanceNs(req: IncomingMessage): Promise<string | undefined> {
+  try {
+    const body = (await readJsonBody(req)) as Record<string, unknown> | null;
+    if (body && typeof body.settingsNs === 'string' && body.settingsNs.trim()) {
+      return body.settingsNs.trim();
+    }
+  } catch {
+    // 参数缺失
+  }
+  return undefined;
 }
 
 /**
