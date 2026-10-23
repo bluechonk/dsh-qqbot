@@ -116,6 +116,13 @@ export interface ImQQBotConfig {
   showToolResults: boolean;
   /** 调试模式 */
   debug: boolean;
+  /**
+   * 未知网关事件留痕（→ ~/.dsh-qqbot/raw-events.jsonl）
+   *
+   * QQ 的「戳一戳」等能力在腾讯自家 SDK 的事件常量里查不到，
+   * 记录原始事件才能判断平台是否真的推送。
+   */
+  rawEventLog: boolean;
   /** 富媒体理解（图片/视频） */
   media: MediaConfig;
   /** 视觉理解（qqbot_describe_image 工具，走 dsh llm + attachments） */
@@ -197,6 +204,8 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
   }).description('自主接话（判断是否参与群聊对话）'),
   showToolResults: Schema.boolean().default(false).description('是否展示工具调用成功结果（错误始终展示）'),
   debug: Schema.boolean().default(false),
+  rawEventLog: Schema.boolean().default(true).description(
+    '记录未知网关事件到 ~/.dsh-qqbot/raw-events.jsonl（用于探测「戳一戳」等平台事件是否推送）'),
   media: Schema.object({
     enabled: Schema.boolean().default(true).description('是否启用富媒体理解（图片/视频下载 + 工具分析）'),
     maxMB: Schema.number().default(200).description('富媒体下载大小上限(MB)'),

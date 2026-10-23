@@ -18,7 +18,7 @@ import type { QQBotSender } from '../transport/outbound-buffer.ts';
 import { QuestionChannel } from '../features/question-channel.ts';
 import { ApprovalChannel, type ApprovalChannelContext } from '../features/approval-channel.ts';
 import { decodeButtonData } from '../features/button-utils.ts';
-import { buildUserAgent } from '../shared/index.ts';
+import { buildUserAgent, pluginDataPath } from '../shared/index.ts';
 import type { ImQQBotConfig } from '../config.ts';
 import type { ChatScope, Logger } from '../types.ts';
 import { setupMiddlewares } from './middleware-setup.ts';
@@ -28,6 +28,7 @@ import { registerSendFileTool, type MediaSenderLike } from '../media/send-file-t
 import { ProactiveCooldown } from '../features/proactive/cooldown.ts';
 import { ProactiveObserver } from '../features/proactive/observer.ts';
 import { proactiveDataPath } from '../features/proactive/index.ts';
+import { RawEventLog } from '../features/raw-event-log.ts';
 
 /**
  * interaction 统一分发器：按 button_data 的顶层 `t` 判别字段，路由到对应
@@ -78,6 +79,21 @@ export async function bootstrapGateway(
     }),
   };
   setupMiddlewares(bot, config, manager, logger, proactive);
+
+  // ── 未知网关事件留痕 ──
+  // SDK 只对已知事件建模，其余以 rawEvent 透传。QQ 的「戳一戳」在腾讯自家
+  // SDK 的事件常量里查不到，需要先证明平台是否真的推送，再决定要不要实现。
+  // 落盘到 ~/.dsh-qqbot/raw-events.jsonl，戳一下机器人看有没有记录即可判明。
+  const rawEvents = new RawEventLog({
+    filePath: pluginDataPath('raw-events.jsonl'),
+    enabled: config.rawEventLog,
+  });
+  bot.on('rawEvent', (rawCtx: unknown) => {
+    const { eventType, data } = (rawCtx ?? {}) as { eventType?: unknown; data?: unknown };
+    const type = typeof eventType === 'string' ? eventType : '<unknown>';
+    rawEvents.record(type, data);
+    logger.debug(`im-qqbot: raw gateway event ${type}`);
+  });
 
   // ── 入站：经过中间件链后的消息交给 dsh agent ──
   bot.on('message', async (mCtx: MiddlewareContext) => {

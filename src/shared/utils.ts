@@ -147,3 +147,13 @@ export function formatRelativeTime(ts?: number): string {
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h 前`;
   return `${Math.floor(diff / 86_400_000)}d 前`;
 }
+
+/**
+ * 插件本地数据文件路径（统一落在 ~/.dsh-qqbot/）
+ *
+ * 判定日志、启动留痕、未知事件、群友档案、表情索引都放这里，
+ * 便于集中备份与清理。
+ */
+export function pluginDataPath(fileName: string): string {
+  return resolve(os.homedir(), '.dsh-qqbot', fileName);
+}
