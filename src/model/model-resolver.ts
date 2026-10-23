@@ -26,10 +26,9 @@ interface LlmServiceLike {
   /**
    * 查询单个 provider/model 的能力元数据（可选：旧版宿主没有这个方法）。
    *
-   * 关键用途：`reasoning` 字段决定这个模型支不支持思考强度。
-   * 不查就注入 `reasoningEffort` 会让**整轮直接失败**——
-   * 宿主源码：模型没有 reasoning 能力时，只要传了值就抛
-   * `UNSUPPORTED_REASONING_EFFORT`。
+   * 关键用途有两个，都是「不查就把整轮搞崩」：
+   *   - `reasoning` 决定支不支持思考强度（不支持时传值抛 `UNSUPPORTED_REASONING_EFFORT`）
+   *   - `inputModalities` 决定接不接受图片输入（不接受时附 ImageBlock 会让请求失败）
    */
   resolveModelInfo?(
     provider: string,
@@ -43,6 +42,11 @@ interface LlmServiceLike {
      *   { efforts } → 推理模型，附可选档位
      */
     reasoning?: false | { efforts?: readonly { id: string }[] };
+    /**
+     * 接受的请求模态。语义（dsh-llm 源码）：
+     *   undefined → 能力未知；显式给出但不含 'image' → **负能力**
+     */
+    inputModalities?: readonly string[];
   }>;
 }
 
@@ -62,6 +66,8 @@ export class ModelResolver {
   private readonly logger?: Logger;
   /** `${provider}/${model}` → 思考强度支持情况（查过一次就缓存） */
   private readonly reasoningCaps = new Map<string, ReasoningCapability>();
+  /** `${provider}/${model}` → 是否接受图片输入（查过一次就缓存） */
+  private readonly imageCaps = new Map<string, boolean>();
 
   constructor(
     ctx: Context,
@@ -168,6 +174,47 @@ export class ModelResolver {
       this.logger?.debug(
         `ModelResolver: ${key} 思考强度能力查询失败: ${err instanceof Error ? err.message : String(err)}`,
       );
+    }
+  }
+
+  /**
+   * 查询并缓存「该模型是否接受图片输入」。
+   *
+   * 用途：决定要不要把群里的图片作为多模态块附给对话模型。
+   * 不查就附会让**整轮直接失败**（同 `reasoningEffort` 那个坑）。
+   *
+   * `inputModalities` 的语义（dsh-llm 源码）：
+   *   undefined   → 能力未知
+   *   数组        → 显式声明；不含 'image' 即**负能力**
+   * 未知与负能力都返回 false——附图的代价是整轮失败，不附图只是看不到图。
+   *
+   * 查询失败**不缓存**，保持未知以便下次重试。
+   */
+  async supportsImageInput(provider: string, model: string): Promise<boolean> {
+    const key = `${provider}/${model}`;
+    const cached = this.imageCaps.get(key);
+    if (cached !== undefined) return cached;
+
+    const llm = this.getLlmService();
+    if (!llm?.resolveModelInfo) return false;
+
+    try {
+      const info = await llm.resolveModelInfo(provider, model);
+      const modalities = info?.inputModalities as unknown;
+      const supported = Array.isArray(modalities) && modalities.includes('image');
+      this.imageCaps.set(key, supported);
+      if (!supported) {
+        this.logger?.debug(
+          `ModelResolver: ${key} 不接受图片输入（inputModalities=${JSON.stringify(modalities ?? null)}），图片只给路径`,
+        );
+      }
+      return supported;
+    } catch (err) {
+      // 保持未知，不缓存；下次还会重试
+      this.logger?.debug(
+        `ModelResolver: ${key} 图片能力查询失败: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return false;
     }
   }
 

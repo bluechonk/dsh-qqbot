@@ -161,7 +161,30 @@ export async function handleInbound(
   }
 
   // ── 构建 UserMessage → followup ──
-  const content: ContentBlock[] = [{ type: 'text' as const, text: agentBody }];
+  //
+  // 图片**作为多模态块附上**，而不是只给一行本地路径。
+  // 只给路径时模型看到的是一串文件名，只能回「我看不懂」——实测踩过。
+  // 两道闸在 manager.buildInlineImages 里：模型不接受图片输入、或
+  // attachments 服务不可用时返回空数组，自动退回「只给路径」的老行为。
+  const imagePaths = collectImagePaths(mwState);
+  const imageBlocks = imagePaths.length > 0
+    ? await manager.buildInlineImages(scope, peerId, imagePaths)
+    : [];
+
+  let bodyText = agentBody;
+  if (imageBlocks.length > 0) {
+    // 明确说明「图就在本条消息里」：qqchat 的 persona 写着「不读写文件」，
+    // 不点破的话模型可能以为要读文件而拒看。
+    bodyText = `${bodyText}\n\n[图片已随本条消息附上，直接看即可]`;
+    logger.info(`→ attached ${imageBlocks.length} inline image(s)`);
+  } else if (imagePaths.length > 0) {
+    logger.debug?.(`inline image skipped (unsupported model or attachments unavailable), ${imagePaths.length} path(s) kept`);
+  }
+
+  const content: ContentBlock[] = [
+    ...imageBlocks,
+    { type: 'text' as const, text: bodyText },
+  ];
 
   const message = createUserMessage({
     content,
@@ -187,6 +210,18 @@ export async function handleInbound(
 // ══════════════════════════════════════════════════════════════
 // Body Assembly（5 层组装）
 // ══════════════════════════════════════════════════════════════
+
+/**
+ * 取出本轮**成功下载到本地**的图片路径（供多模态附图用）。
+ *
+ * 只认 `contentType === 'image'` 且 `localPath` 非空——下载失败的附件
+ * 在 downloadedFiles 里没有条目，天然被排除。
+ */
+function collectImagePaths(state: MiddlewareState): string[] {
+  return (state.downloadedFiles ?? [])
+    .filter((f) => f.contentType === 'image' && f.localPath)
+    .map((f) => f.localPath);
+}
 
 /**
  * 组装 agentBody — AI 实际看到的完整上下文

@@ -20,6 +20,8 @@ import type { ImQQBotConfig } from '../config.ts';
 import { ModelResolver } from '../model/model-resolver.ts';
 import { resolvePresetId } from '../model/preset-resolution.ts';
 import type { ModelRoute, ModelEntry } from '../model/types.ts';
+import { buildInlineImageBlock, type AttachmentStoreLike } from '../media/image-input.ts';
+import type { ImageBlock } from '@deepseek-ai/dsh-llm';
 import { IdleEvictor } from './idle-evictor.ts';
 import type { QuestionChannel } from '../features/question-channel.ts';
 import type { ApprovalChannel } from '../features/approval-channel.ts';
@@ -327,6 +329,41 @@ export class SessionManager {
 
   listProviders(): string[] {
     return this.modelResolver.listProviders();
+  }
+
+  /**
+   * 把下载好的本地图片转成可直接附给模型的多模态块。
+   *
+   * 为什么放在 SessionManager：它持有 cordis `ctx`（能取 attachments 服务），
+   * 而入站侧只有 `MiddlewareContext`（拿不到服务）。
+   *
+   * 两道闸，任一不满足就返回空数组（调用方退回「只给路径」的老行为）：
+   *   1. **当前模型必须接受图片输入** —— 不接受时附 ImageBlock 会让整轮失败
+   *   2. attachments 服务必须可用
+   *
+   * 单张图失败只跳过那一张，不影响其余图片，也不影响文字。
+   */
+  async buildInlineImages(scope: ChatScope, peerId: string, filePaths: readonly string[]): Promise<ImageBlock[]> {
+    if (filePaths.length === 0) return [];
+
+    const route = this.getEffectiveModel(scope, peerId);
+    if (route === undefined) return [];
+    if (!await this.modelResolver.supportsImageInput(route.provider, route.model)) return [];
+
+    let attachments: AttachmentStoreLike | undefined;
+    try {
+      attachments = this.ctx.get('attachments') as AttachmentStoreLike | undefined;
+    } catch {
+      attachments = undefined;
+    }
+    if (!attachments?.saveImage) return [];
+
+    const blocks: ImageBlock[] = [];
+    for (const path of filePaths) {
+      const block = await buildInlineImageBlock(attachments, path, this.config.vision.maxBytes);
+      if (block !== undefined) blocks.push(block);
+    }
+    return blocks;
   }
 
   // ── 会话状态 / 统计 ──

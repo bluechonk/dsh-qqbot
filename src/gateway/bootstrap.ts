@@ -18,7 +18,7 @@ import type { QQBotSender } from '../transport/outbound-buffer.ts';
 import { QuestionChannel } from '../features/question-channel.ts';
 import { ApprovalChannel, type ApprovalChannelContext } from '../features/approval-channel.ts';
 import { decodeButtonData } from '../features/button-utils.ts';
-import { buildUserAgent, pluginDataPath } from '../shared/index.ts';
+import { buildUserAgent, pluginDataPath, traceStartup } from '../shared/index.ts';
 import type { ImQQBotConfig } from '../config.ts';
 import type { ChatScope, Logger } from '../types.ts';
 import { setupMiddlewares } from './middleware-setup.ts';
@@ -38,8 +38,7 @@ import { flushPeopleStoreIfCreated } from '../features/people/index.ts';
  * interaction 统一分发器：按 button_data 的顶层 `t` 判别字段，路由到对应
  * channel（question / approval）。QQ 只有一个 interaction 入口，集中路由
  * 避免多通道各自 try 导致误判。
- */
-function dispatchInteraction(event: InteractionEvent, manager: SessionManager): boolean {
+ */function dispatchInteraction(event: InteractionEvent, manager: SessionManager): boolean {
   const raw = event.data?.resolved?.button_data;
   if (!raw) return false;
   const button = decodeButtonData(raw);
@@ -47,6 +46,15 @@ function dispatchInteraction(event: InteractionEvent, manager: SessionManager): 
   if (button.t === 'question') return manager.questionChannel?.handleInteraction(event) ?? false;
   if (button.t === 'approval') return manager.approvalChannel?.handleInteraction(event) ?? false;
   return false;
+}
+
+/** 探测宿主服务是否可访问（守卫可能抛错，一律当「不可用」） */
+function serviceAvailable(ctx: Context, name: string): boolean {
+  try {
+    return ctx.get(name) !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 export async function bootstrapGateway(
@@ -131,6 +139,14 @@ export async function bootstrapGateway(
   } catch {
     toolsRegistry = undefined;
   }
+
+  // 服务可用性留痕：附件/llm 缺失会让「图片作为多模态输入」静默降级成「只给路径」，
+  // 启动时记一次，排查时不用猜（本项目的降级一律留痕）
+  traceStartup('im-qqbot 服务可用性', {
+    attachments: serviceAvailable(ctx, 'attachments'),
+    tools: toolsRegistry !== undefined,
+    llm: serviceAvailable(ctx, 'llm'),
+  });
 
   // 发送适配器：将 QQBot 实例适配为 QQBotSender（openStream 参数形态不同）。
   // sendMarkdown 统一做被动回复限额管控：同一 msgId 超限/过期时降级主动推送。
