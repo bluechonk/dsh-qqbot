@@ -194,7 +194,12 @@ profile  <DSH_HOME>/profiles/<profile>/cordis.patch.yml   # im-qqbot 条目
 | `/whoami` | 查看自己的 openid 与权限 | 所有人 |
 | `/bot-ping` | 网络延迟检测（返回传输与处理耗时） | 所有人 |
 | `/bot-version` | 查看版本信息 | 所有人 |
-| `/bot-help` | 查看所有指令（按权限过滤） | 所有人 |
+| `/bot-help`（别名 `/help`） | 查看所有指令（按权限过滤，含别名） | 所有人 |
+
+**群聊里命令必须 @ 机器人**（SDK 的要求）；私聊直接发即可。
+命令名打错或没注册的 `/xxx` **不会报错，会退化成普通聊天**——
+所以觉得「命令没生效」时，先看 `~/.dsh-qqbot/middleware-events.jsonl`
+有没有 `kind=handled`：没有就是没被识别。
 
 **命令默认仅限主人**——不显式标注的命令都要求管理员权限，
 避免新增命令时忘记加校验导致意外开放。

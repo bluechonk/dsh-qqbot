@@ -12,7 +12,7 @@
 
 ### 新增
 
-- **命令权限**：`admin.openids` 白名单 + `/whoami` 自助查 openid。除 `/whoami` / `/bot-ping` / `/bot-version` / `/bot-help` 外，命令都要求管理员身份；`/bot-help` 按权限过滤。平台不告诉机器人谁是创建者，所以主人身份必须显式配置。
+- **命令权限**：`admin.openids` 白名单 + `/whoami` 自助查 openid。除 `/whoami` / `/bot-ping` / `/bot-version` / `/bot-help`（别名 `/help`）外，命令都要求管理员身份；`/bot-help` 按权限过滤、并把别名一起列出来。平台不告诉机器人谁是创建者，所以主人身份必须显式配置。
 - **中间件链留痕**：链首哨兵 + 并发合并留痕，落盘 `~/.dsh-qqbot/middleware-events.jsonl`（`drop` 消息被丢 / `denied` 命令被拒 / `merge` N 条并成 1 轮 / `handled` 命令被识别并处理）。此前链上各关卡丢弃时纹丝不动，是排查最大的盲区；命令是否被识别也无从判断。
 - **preset 可切换**：默认仍是 `qqchat`（零工具 + 内置人格），但 `/preset` 支持切换。切换会重建会话（`agents.resume()` 改不了 preset），上下文保留。
 - **自主接话**：群里没人点名她时，由本地词法门控（零 token、零依赖）判断这条值不值得接；接不接最后由模型在回合内自己决定。设计见 [docs/自主接话.md](docs/自主接话.md)。
