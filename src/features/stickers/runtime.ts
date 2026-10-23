@@ -9,7 +9,8 @@ import { pluginDataPath } from '../../shared/index.ts';
 import { StickerCatalog } from './catalog.ts';
 import type { StickerRuntimeState } from './select.ts';
 
-let catalog: StickerCatalog | undefined;
+/** settingsNs → 图库 */
+const catalogs = new Map<string, StickerCatalog>();
 /** sessionKey → 表情发送状态 */
 const states = new Map<string, StickerRuntimeState>();
 
@@ -27,18 +28,21 @@ let assetRootOverride: string | undefined;
 export function setStickerPathsForTest(paths?: { catalogPath?: string; assetRoot?: string }): void {
   catalogPathOverride = paths?.catalogPath;
   assetRootOverride = paths?.assetRoot;
-  catalog = undefined;
+  catalogs.clear();
 }
 
 /** 取图库（惰性创建；enabled=false 时内部会返回空数组） */
-export function getStickerCatalog(enabled: boolean): StickerCatalog {
-  if (catalog === undefined) {
-    catalog = new StickerCatalog({
-      filePath: catalogPathOverride ?? pluginDataPath('stickers.json'),
+export function getStickerCatalog(enabled: boolean, settingsNs?: string): StickerCatalog {
+  const key = settingsNs ?? '';
+  let instance = catalogs.get(key);
+  if (instance === undefined) {
+    instance = new StickerCatalog({
+      filePath: catalogPathOverride ?? pluginDataPath('stickers.json', settingsNs),
       enabled,
     });
+    catalogs.set(key, instance);
   }
-  return catalog;
+  return instance;
 }
 
 /** 取某会话的发送状态（惰性初始化：计数从 0 起，意味着要先攒够文字的条数） */
@@ -57,7 +61,7 @@ export function setStickerState(sessionKey: string, state: StickerRuntimeState):
 
 /** 仅供测试重置 */
 export function resetStickerRuntime(): void {
-  catalog = undefined;
+  catalogs.clear();
   states.clear();
   catalogPathOverride = undefined;
   assetRootOverride = undefined;
@@ -66,9 +70,10 @@ export function resetStickerRuntime(): void {
 /**
  * 把图库里的相对路径解析成绝对路径。
  *
- * 素材统一放在 `~/.dsh-qqbot/stickers/` 下，`file` 字段写相对路径
- * （例如 `deepseek-chan/得意.png`），这样整个素材目录可以整体搬走。
+ * 素材统一放在 `~/.dsh-qqbot/<ns>/stickers/` 下（多实例时按 ns 分一层），
+ * `file` 字段写相对路径（例如 `deepseek-chan/得意.png`），
+ * 这样整个素材目录可以整体搬走。
  */
-export function resolveStickerPath(file: string): string {
-  return resolve(assetRootOverride ?? pluginDataPath('stickers'), file);
+export function resolveStickerPath(file: string, settingsNs?: string): string {
+  return resolve(assetRootOverride ?? pluginDataPath('stickers', settingsNs), file);
 }

@@ -112,7 +112,7 @@ export async function handleInbound(
   // ── 群友档案：认人 + 记称呼 ──
   // 零成本启发式：不从模型要数据（qqchat 是零工具预设，模型没法调工具记人），
   // 只从消息信封取昵称、从自我介绍句式抽别名。
-  const people = config.people.enabled ? getPeopleStore(true) : undefined;
+  const people = config.people.enabled ? getPeopleStore(true, config.settingsNs) : undefined;
   const alias = extractAlias(msg.content ?? '');
   const profile = people?.touch({
     appId: config.appId,

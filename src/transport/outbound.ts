@@ -427,7 +427,7 @@ class OutboundRouter {
       return undefined;
     }
 
-    const catalog = getStickerCatalog(true);
+    const catalog = getStickerCatalog(true, this.config.settingsNs);
     const stickers = catalog.all();
     if (stickers.length === 0) return undefined;
 
@@ -458,7 +458,7 @@ class OutboundRouter {
     sticker: Sticker,
     fallbackText: string,
   ): Promise<boolean> {
-    const filePath = resolveStickerPath(sticker.file);
+    const filePath = resolveStickerPath(sticker.file, this.config.settingsNs);
     if (this.bot.sendImage === undefined) {
       this.logger.warn('im-qqbot: sendImage unavailable in SDK, skip sticker');
       return false;

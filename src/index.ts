@@ -6,11 +6,12 @@
  * 凭据绑定编排（扫码状态机 + 端内绑定页路由）见 src/setup/。
  */
 import type { Context } from '@deepseek-ai/cordis';
-import { ConfigSchema, FIXED_PRESET_ID, type ImQQBotConfig } from './config.ts';
+import { ConfigSchema, DEFAULT_SETTINGS_NS, FIXED_PRESET_ID, type ImQQBotConfig } from './config.ts';
 import { bootstrapGateway } from './gateway/index.ts';
 import type { DshAgentRegistry } from './session/index.ts';
 import { getProfileDir, resolveEnv, traceStartup } from './shared/index.ts';
 import { ensureCredentials, persistCredentialsToProfile, registerBoundCredentialRoutes } from './setup/index.ts';
+import { normalizeSettingsNs, validateProfileSettingsNs } from './features/ns-guard.ts';
 import type { Logger } from './types.ts';
 
 // ── Cordis 插件元数据 ──
@@ -24,17 +25,30 @@ export type { ImQQBotConfig } from './config.ts';
 export async function apply(ctx: Context, config: ImQQBotConfig): Promise<void> {
   const agents = (ctx as unknown as Record<string, unknown>).agents as DshAgentRegistry;
   const logger: Logger = ((ctx as unknown as Record<string, unknown>).logger as Logger) ?? console;
+  const settingsNs = normalizeSettingsNs(config.settingsNs);
 
   // 启动留痕：只记关键状态，不记凭据
   traceStartup('im-qqbot apply()', {
     appId: config.appId ? `appId=${config.appId.slice(0, 4)}***` : 'appId=<空>',
+    ns: settingsNs,
     preset: FIXED_PRESET_ID,
     proactive: config.proactive?.enabled ?? '<无配置>',
     requireMention: config.requireMention,
   });
 
   try {
-    await startPlugin(ctx, agents, config, logger);
+    // 命名空间守卫：多实例时 settingsNs 重复会让两个实例互相覆盖配置与数据，
+    // 且症状是静默的 —— 宁可拒绝启动并明确报错，也不悄悄抢同一条路由。
+    const guard = validateProfileSettingsNs(getProfileDir(ctx) ?? undefined);
+    if (!guard.ok && guard.duplicates.length > 0) {
+      throw new Error(
+        `settingsNs 冲突：${guard.duplicates.join('、')} 在 profile 中被多个实例使用。`
+        + `每个实例必须有唯一的 settingsNs（它决定路由、设置分区与数据目录）。`
+        + `请修正 cordis.patch.yml 后重启。`,
+      );
+    }
+
+    await startPlugin(ctx, agents, { ...config, settingsNs }, logger);
   } catch (err) {
     // 启动失败必须留痕：宿主只把错误打进自己的 stdout，桌面端取不回来
     traceStartup('im-qqbot 启动失败', err);
@@ -52,6 +66,16 @@ async function startPlugin(
 
   let appId = resolveEnv(config.appId, 'QQBOT_APPID');
   let appSecret = resolveEnv(config.appSecret, 'QQBOT_SECRET');
+
+  // 停用实例：不建连接、不响应消息（不是只过滤回复）。
+  // 仍然注册绑定路由，让主人能在页面上重新启用/绑定。
+  if (config.enabled === false) {
+    logger.info(`实例 ${config.settingsNs ?? DEFAULT_SETTINGS_NS} 已停用（enabled=false），不建立连接`);
+    if (appId && appSecret) {
+      registerBoundCredentialRoutes(ctx, logger, appId, { ...config });
+    }
+    return;
+  }
 
   // ── 凭据缺失时唤起扫码绑定 ──
   if (!appId || !appSecret) {

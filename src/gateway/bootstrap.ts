@@ -78,7 +78,7 @@ export async function bootstrapGateway(
       maxPerHour: config.proactive.maxPerHour,
     }),
     observer: new ProactiveObserver({
-      filePath: proactiveDataPath('proactive-scores.jsonl'),
+      filePath: proactiveDataPath('proactive-scores.jsonl', config.settingsNs),
       enabled: config.proactive.observer,
     }),
     // 群活跃度（M1 时机特征）：门控读它，出站写「她刚发过言」
@@ -91,7 +91,7 @@ export async function bootstrapGateway(
   // 中间件链上每个关卡都能让消息「消失」，此前只有门控会记日志。
   // 落盘到 ~/.dsh-qqbot/middleware-drops.jsonl。
   const dropLog = new MiddlewareDropLog({
-    filePath: pluginDataPath('middleware-drops.jsonl'),
+    filePath: pluginDataPath('middleware-drops.jsonl', config.settingsNs),
     enabled: config.middlewareLog,
   });
 
@@ -102,7 +102,7 @@ export async function bootstrapGateway(
   // SDK 的事件常量里查不到，需要先证明平台是否真的推送，再决定要不要实现。
   // 落盘到 ~/.dsh-qqbot/raw-events.jsonl，戳一下机器人看有没有记录即可判明。
   const rawEvents = new RawEventLog({
-    filePath: pluginDataPath('raw-events.jsonl'),
+    filePath: pluginDataPath('raw-events.jsonl', config.settingsNs),
     enabled: config.rawEventLog,
   });
   bot.on('rawEvent', (rawCtx: unknown) => {
