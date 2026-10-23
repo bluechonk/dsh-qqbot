@@ -13,8 +13,18 @@
 /** 路由前缀 */
 export const BIND_PATH_PREFIX = '/qqbot';
 
-/** 默认实例命名空间（单实例时路径与旧版逐字一致） */
-export const DEFAULT_BIND_NS = 'im-qqbot';
+/**
+ * 默认实例命名空间 —— **全仓唯一来源**。
+ *
+ * 一个实例的命名空间同时决定四样东西：patch 条目 id、绑定路由前缀、
+ * Web 设置分区、本地数据目录。四者必须一致，所以常量只定义在这里；
+ * `config.ts` 与 `setup/persist.ts` 从本模块取（本模块是纯模块，
+ * 客户端 bundle 也用它，不能反过来 import 那两个）。
+ */
+export const DEFAULT_INSTANCE_NS = 'im-qqbot';
+
+/** 默认实例命名空间（绑定路由视角的旧名，等价于 {@link DEFAULT_INSTANCE_NS}） */
+export const DEFAULT_BIND_NS = DEFAULT_INSTANCE_NS;
 
 /** 状态查询（绑定页轮询） */
 export function bindStatePath(ns: string): string {

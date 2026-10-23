@@ -11,6 +11,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, afterEach, beforeEach } from 'vitest';
 import { getProfileDir, pluginDataDir, pluginDataPath } from './utils.ts';
+import { DEFAULT_INSTANCE_NS } from './bind-protocol.ts';
 
 const tempDirs: string[] = [];
 
@@ -175,6 +176,15 @@ describe('pluginDataDir / pluginDataPath', () => {
   it('不传 ns 时保持 ~/.dsh-qqbot（单实例行为逐字不变）', () => {
     expect(pluginDataDir()).toBe(resolve(homedir(), '.dsh-qqbot'));
     expect(pluginDataDir(undefined)).toBe(pluginDataDir());
+  });
+
+  it('**传默认 ns 也必须回落基础目录**（config.settingsNs 总有值，不能只判空）', () => {
+    // 这条是回归守卫：早期实现只判「ns 是否为空」，而 config.settingsNs
+    // 有 schema 默认值 'im-qqbot'，于是默认实例的数据被搬进
+    // ~/.dsh-qqbot/im-qqbot/ —— 单实例行为变了，排查脚本还指着老路径。
+    expect(pluginDataDir(DEFAULT_INSTANCE_NS)).toBe(resolve(homedir(), '.dsh-qqbot'));
+    expect(pluginDataPath('people.json', DEFAULT_INSTANCE_NS))
+      .toBe(resolve(homedir(), '.dsh-qqbot', 'people.json'));
   });
 
   it('多实例按 ns 分一层目录', () => {
