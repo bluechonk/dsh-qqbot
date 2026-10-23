@@ -18,6 +18,7 @@ import { createLexicalGate, stripMentions } from '../features/proactive/lexical-
 import type { ProactiveDecision } from '../features/proactive/types.ts';
 import type { ProactiveCooldown } from '../features/proactive/cooldown.ts';
 import type { ProactiveObserver } from '../features/proactive/observer.ts';
+import type { GroupActivity } from '../features/proactive/activity.ts';
 
 /** 门控选项 */
 export interface ProactiveGateOptions {
@@ -25,6 +26,8 @@ export interface ProactiveGateOptions {
   logger: Logger;
   cooldown: ProactiveCooldown;
   observer: ProactiveObserver;
+  /** 群活跃度（M1 时机特征的数据源） */
+  activity: GroupActivity;
 }
 
 /** 消息上的 mention 状态（SDK mentionGate 写入） */
@@ -51,7 +54,7 @@ function detectMentionMarker(content: string, appId: string): boolean {
 }
 
 export function proactiveGate(options: ProactiveGateOptions) {
-  const { config, logger, cooldown, observer } = options;
+  const { config, logger, cooldown, observer, activity } = options;
   const proactive = config.proactive;
   const gate = createLexicalGate({ minLength: proactive.minLength, minScore: proactive.minScore });
   const appId = config.appId;
@@ -68,6 +71,7 @@ export function proactiveGate(options: ProactiveGateOptions) {
         kind?: string;
         content?: string;
         groupOpenid?: string;
+        senderId?: string;
         mentions?: MentionEntry[];
         rawEventType?: string;
       };
@@ -81,6 +85,7 @@ export function proactiveGate(options: ProactiveGateOptions) {
       const groupId = msg.groupOpenid ?? '';
       // 诊断用：@ 判定依赖这三者，出问题时日志里直接能看到
       const rawEventType = msg.rawEventType;
+      const senderId = msg.senderId ?? '';
       const rawContent = msg.content ?? '';
 
       // 被 @ → 必回。
@@ -117,7 +122,13 @@ export function proactiveGate(options: ProactiveGateOptions) {
       const mentionedOthers = mentions.length > 0 && !mentions.some((m) => m?.is_you === true);
 
       const text = stripMentions(rawContent);
-      const verdict = gate.evaluate({ text, mentioned: false, mentionedOthers });
+
+      // 时机特征（M1）：先把这条记进活跃度，再算当前窗口的特征。
+      // 顺序要「先记后算」——否则连发第一条永远数不到自己。
+      activity.record(groupId, senderId);
+      const signals = activity.signals(groupId);
+
+      const verdict = gate.evaluate({ text, mentioned: false, mentionedOthers, signals });
 
       // 判定失败（实现不可用）→ 按"未知"处理，不拦
       if (verdict === undefined) {
@@ -143,6 +154,10 @@ export function proactiveGate(options: ProactiveGateOptions) {
         chars: text.length,
         rawEventType,
         mentionState: state.mention,
+        // 时机特征（M1）：调阈值时这些比分数本身更有用
+        recentMessages: signals.recentMessages,
+        consecutiveSameSender: signals.consecutiveSameSender,
+        sinceBotSpokeMs: signals.sinceBotSpokeMs,
       });
 
       if (!worth) {

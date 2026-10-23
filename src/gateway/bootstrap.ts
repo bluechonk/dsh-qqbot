@@ -29,6 +29,7 @@ import { ProactiveCooldown } from '../features/proactive/cooldown.ts';
 import { ProactiveObserver } from '../features/proactive/observer.ts';
 import { proactiveDataPath } from '../features/proactive/index.ts';
 import { RawEventLog } from '../features/raw-event-log.ts';
+import { GroupActivity } from '../features/proactive/activity.ts';
 
 /**
  * interaction 统一分发器：按 button_data 的顶层 `t` 判别字段，路由到对应
@@ -77,6 +78,8 @@ export async function bootstrapGateway(
       filePath: proactiveDataPath('proactive-scores.jsonl'),
       enabled: config.proactive.observer,
     }),
+    // 群活跃度（M1 时机特征）：门控读它，出站写「她刚发过言」
+    activity: new GroupActivity(),
   };
   setupMiddlewares(bot, config, manager, logger, proactive);
 
@@ -129,7 +132,10 @@ export async function bootstrapGateway(
     }),
   };
 
-  const outbound = createOutboundHandler(manager, sender, config, logger, toolsRegistry);
+  const outbound = createOutboundHandler(
+    manager, sender, config, logger, toolsRegistry,
+    (groupId) => { proactive.activity.recordBotSpoke(groupId); },
+  );
   (ctx as unknown as { on(event: string, handler: (...args: unknown[]) => void): void })
     .on('session/event', outbound.routeSessionEvent as (...args: unknown[]) => void);
 

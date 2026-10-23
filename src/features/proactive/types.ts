@@ -20,6 +20,23 @@ export interface ValueVerdict {
   reason: string;
 }
 
+/**
+ * 时机特征（M1）
+ *
+ * 静态词法只能回答「这条内容值不值得接」，回答不了「**此刻**适不适合开口」。
+ * 同样一句「这个怎么弄」，在她刚说完话时插嘴很吵，在冷场三分钟后接话就很自然。
+ *
+ * 这些信号全部零成本（本地计数），不调模型。
+ */
+export interface ProactiveSignals {
+  /** 近 3 分钟群内消息数（判断群是热闹还是冷清） */
+  recentMessages: number;
+  /** 同一发送者连续发了几条（>=2 说明他在等人接） */
+  consecutiveSameSender: number;
+  /** 距机器人上次在群里发言多久（ms）；从未发言为 undefined */
+  sinceBotSpokeMs?: number;
+}
+
 /** 参与判定的候选消息 */
 export interface ProactiveCandidate {
   /** 正文（已剥 mention 标记） */
@@ -28,6 +45,8 @@ export interface ProactiveCandidate {
   mentioned: boolean;
   /** 是否 @ 了别人（这轮对话的方向是别人，插嘴不自然） */
   mentionedOthers: boolean;
+  /** 时机特征（缺省表示不参与打分，保持纯词法行为） */
+  signals?: ProactiveSignals;
 }
 
 /** 判定器接口（可替换：词法 → 本地嵌入 → LLM） */

@@ -105,3 +105,69 @@ describe('evaluateLexical', () => {
     expect(low!.score).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe('evaluateLexical 时机特征（M1）', () => {
+  const TEXT = '这个报错怎么解决啊'; // 命中 question，基础分 0.68
+
+  it('不带 signals 时行为与纯词法一致', () => {
+    const withSignals = evaluateLexical({
+      text: TEXT, mentioned: false, mentionedOthers: false,
+      signals: { recentMessages: 0, consecutiveSameSender: 1 },
+    }, OPTS);
+    const without = evaluateLexical({ text: TEXT, mentioned: false, mentionedOthers: false }, OPTS);
+    // 无信号命中（连发 1 条不算连发、没刚说过话、群不热闹）→ 分数相同
+    expect(withSignals!.score).toBe(without!.score);
+  });
+
+  it('同一人连发多条 → 加分（他在等人接）', () => {
+    const v = evaluateLexical({
+      text: TEXT, mentioned: false, mentionedOthers: false,
+      signals: { recentMessages: 2, consecutiveSameSender: 2 },
+    }, OPTS);
+    expect(v!.score).toBeGreaterThan(0.68);
+    expect(v!.reason).toContain('consecutive-sender');
+  });
+
+  it('她刚说过话 → 扣分（别连珠炮）', () => {
+    const v = evaluateLexical({
+      text: TEXT, mentioned: false, mentionedOthers: false,
+      signals: { recentMessages: 2, consecutiveSameSender: 1, sinceBotSpokeMs: 5000 },
+    }, OPTS);
+    expect(v!.reason).toContain('bot-just-spoke');
+    expect(v!.score).toBeLessThan(0.68);
+  });
+
+  it('群里正热闹 → 扣分（别抢话）', () => {
+    const v = evaluateLexical({
+      text: TEXT, mentioned: false, mentionedOthers: false,
+      signals: { recentMessages: 25, consecutiveSameSender: 1 },
+    }, OPTS);
+    expect(v!.reason).toContain('busy-group');
+  });
+
+  it('刚说过话 + 群很热闹 → 双重扣分压到门槛下', () => {
+    const v = evaluateLexical({
+      text: TEXT, mentioned: false, mentionedOthers: false,
+      signals: { recentMessages: 25, consecutiveSameSender: 1, sinceBotSpokeMs: 3000 },
+    }, OPTS);
+    expect(v!.worth).toBe(false);
+  });
+
+  it('喊名字仍然压过一切时机特征（叫她必须应）', () => {
+    const v = evaluateLexical({
+      text: '大肥鱼', mentioned: false, mentionedOthers: false,
+      signals: { recentMessages: 50, consecutiveSameSender: 1, sinceBotSpokeMs: 1000 },
+    }, OPTS);
+    expect(v!.worth).toBe(true);
+    expect(v!.reason).toBe('self-name');
+  });
+
+  it('很久没说话时不加不减（正常状态）', () => {
+    const v = evaluateLexical({
+      text: TEXT, mentioned: false, mentionedOthers: false,
+      signals: { recentMessages: 3, consecutiveSameSender: 1, sinceBotSpokeMs: 600_000 },
+    }, OPTS);
+    // 0.5 + 0.18 有浮点误差，用近似比较
+    expect(v!.score).toBeCloseTo(0.68, 10);
+  });
+});

@@ -29,13 +29,18 @@ import { getHistoryStore, historyGroupKey } from '../features/history-store.ts';
 import { proactiveGate } from '../middleware/proactive-gate.ts';
 import type { ProactiveCooldown } from '../features/proactive/cooldown.ts';
 import type { ProactiveObserver } from '../features/proactive/observer.ts';
+import type { GroupActivity } from '../features/proactive/activity.ts';
 
 export function setupMiddlewares(
   bot: QQBot,
   config: ImQQBotConfig,
   manager: SessionManager,
   logger: Logger,
-  proactive: { cooldown: ProactiveCooldown; observer: ProactiveObserver },
+  proactive: {
+    cooldown: ProactiveCooldown;
+    observer: ProactiveObserver;
+    activity: GroupActivity;
+  },
 ): void {
   // 1. 错误兜底（最外层洋葱皮）
   bot.use(errorHandler());
@@ -83,7 +88,13 @@ export function setupMiddlewares(
 
   // 5.5 自主接话判定：未被点名时判断这条值不值得接话
   //     必须挂在 mentionGate 之后——ctx.state.mention.wasMentioned 是那里写的。
-  bot.use(proactiveGate({ config, logger, cooldown: proactive.cooldown, observer: proactive.observer }));
+  bot.use(proactiveGate({
+    config,
+    logger,
+    cooldown: proactive.cooldown,
+    observer: proactive.observer,
+    activity: proactive.activity,
+  }));
 
   // 6. 内容清洗（去 @marker、表情标签、多余空白）
   bot.use(contentSanitizer({

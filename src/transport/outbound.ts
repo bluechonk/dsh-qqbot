@@ -77,6 +77,8 @@ class OutboundRouter {
   private readonly config: ImQQBotConfig;
   private readonly logger: Logger;
   private readonly toolsRegistry: ToolsRegistryLike | undefined;
+  /** 机器人发过群消息的通知回调（M1） */
+  private readonly onBotSpoke: ((groupId: string) => void) | undefined;
 
   public constructor(
     manager: SessionManager,
@@ -84,12 +86,14 @@ class OutboundRouter {
     config: ImQQBotConfig,
     logger: Logger,
     toolsRegistry: ToolsRegistryLike | undefined,
+    onBotSpoke?: (groupId: string) => void,
   ) {
     this.manager = manager;
     this.bot = bot;
     this.config = config;
     this.logger = logger;
     this.toolsRegistry = toolsRegistry;
+    this.onBotSpoke = onBotSpoke;
   }
 
   /** 事件分发入口 */
@@ -290,6 +294,10 @@ class OutboundRouter {
     if (mimicDelay && sentAny && this.config.antiRepeat.enabled) {
       getReplyHistory().record(record.sessionKey, text);
     }
+    // 时机特征：通知「她刚在群里说过话」，让门控知道别连珠炮
+    if (mimicDelay && sentAny && record.scope === 'group') {
+      this.onBotSpoke?.(record.peerId);
+    }
   }
 
   /**
@@ -337,8 +345,15 @@ export function createOutboundHandler(
   config: ImQQBotConfig,
   logger: Logger,
   toolsRegistry?: ToolsRegistryLike,
+  /**
+   * 机器人发出群消息后的回调（M1 时机特征用）。
+   *
+   * 只传回调而不是整个 GroupActivity：出站层不需要知道「活跃度」这个概念，
+   * 它只需要在「我说话了」时通知一声，依赖方向更干净。
+   */
+  onBotSpoke?: (groupId: string) => void,
 ): OutboundHandlers {
-  const router = new OutboundRouter(manager, bot, config, logger, toolsRegistry);
+  const router = new OutboundRouter(manager, bot, config, logger, toolsRegistry, onBotSpoke);
   return {
     routeSessionEvent: (session, event) => router.route(session, event),
     routeStreamFrame: (agentId, delta) => router.routeStreamFrame(agentId, delta),

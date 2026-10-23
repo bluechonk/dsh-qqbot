@@ -57,10 +57,20 @@ const W = {
   noise: -0.22,
   mentionOthers: -0.15,
   longText: -0.05,
+  // ── 时机特征（M1）：同样一句话，什么时候说决定了得不得体 ──
+  consecutiveSender: 0.1,
+  botJustSpoke: -0.15,
+  busyGroup: -0.07,
 } as const;
 
 /** 超过此长度视为长文本（多半不是闲聊） */
 const LONG_TEXT = 80;
+
+/** 机器人「刚说过话」的判定窗口：这段时间内不再接话，免得连珠炮 */
+const BOT_JUST_SPOKE_MS = 60_000;
+
+/** 群「太热闹」的阈值：3 分钟内超过这么多条，就让别人聊，别抢话 */
+const BUSY_GROUP_THRESHOLD = 20;
 
 /**
  * 剥掉 mention 标记，得到"只看正文"的文本。
@@ -143,6 +153,27 @@ export function evaluateLexical(
   if (text.length > LONG_TEXT) {
     score += W.longText;
     reasons.push('long-text');
+  }
+
+  // ── 时机特征（M1）──
+  // 内容值不值得接，与「此刻适不适合开口」是两件事，这里补后者。
+  const signals = candidate.signals;
+  if (signals !== undefined) {
+    // 同一个人连发多条还没人接 → 他在等回应
+    if (signals.consecutiveSameSender >= 2) {
+      score += W.consecutiveSender;
+      reasons.push('consecutive-sender');
+    }
+    // 她刚说过话 → 别连珠炮（真实体感上这比内容判断更重要）
+    if (signals.sinceBotSpokeMs !== undefined && signals.sinceBotSpokeMs < BOT_JUST_SPOKE_MS) {
+      score += W.botJustSpoke;
+      reasons.push('bot-just-spoke');
+    }
+    // 群里正热闹 → 让别人聊，别抢话
+    if (signals.recentMessages >= BUSY_GROUP_THRESHOLD) {
+      score += W.busyGroup;
+      reasons.push('busy-group');
+    }
   }
 
   score = Math.max(0, Math.min(1, score));
