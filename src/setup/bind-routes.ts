@@ -21,16 +21,17 @@ import {
 import { getProfileDir } from '../shared/index.ts';
 import { AccessControlSchema, AdminSchema, AntiRepeatSchema, PeopleSchema, ProactiveSchema, StickersSchema, REASONING_EFFORT_VALUES as REASONING_EFFORT_VALUES_FROM_CONFIG } from '../config.ts';
 import {
-  BIND_CONFIG_PATH,
-  BIND_MANUAL_PATH,
-  BIND_REFRESH_PATH,
-  BIND_STATE_PATH,
-  BIND_UNBIND_PATH,
+  bindConfigPath, bindManualPath, bindRefreshPath, bindStatePath, bindUnbindPath,
+  BIND_CONFIG_PATH, BIND_MANUAL_PATH, BIND_REFRESH_PATH, BIND_STATE_PATH, BIND_UNBIND_PATH,
+  DEFAULT_BIND_NS,
   type BindStateWire,
 } from '../shared/bind-protocol.ts';
 
-// 协议单一来源：shared/bind-protocol.ts（类型 + 路径常量，客户端共用）
-export { BIND_CONFIG_PATH, BIND_MANUAL_PATH, BIND_REFRESH_PATH, BIND_STATE_PATH, BIND_UNBIND_PATH };
+// 协议单一来源：shared/bind-protocol.ts（类型 + 路径函数，客户端共用）
+export {
+  bindConfigPath, bindManualPath, bindRefreshPath, bindStatePath, bindUnbindPath,
+  BIND_CONFIG_PATH, BIND_MANUAL_PATH, BIND_REFRESH_PATH, BIND_STATE_PATH, BIND_UNBIND_PATH,
+};
 export type { BindStateWire };
 
 /** dsh-host-webserver 的具名路由注册形状（局部投影，避免硬依赖） */
@@ -93,6 +94,11 @@ export interface BindRoutesOptions {
    * 拿不到时（旧宿主）退化为 undefined，由 persist 层按旧策略处理。
    */
   profileDir?: string | null;
+  /**
+   * 实例命名空间——决定这批路由挂在哪个路径下（`/qqbot/<ns>/...`）。
+   * 缺省 `im-qqbot`，单实例行为逐字不变。
+   */
+  settingsNs?: string;
 }
 
 /**
@@ -203,8 +209,11 @@ export function registerBindRoutes(
    */
   const resolveProfileDir = (): string | undefined => profileDirOf(options);
 
+  // 路由路径按实例命名空间计算：多实例各占一条路径，不互相抢
+  const ns = options.settingsNs ?? DEFAULT_BIND_NS;
+
   const defaultManual = (credentials: SetupCredentials): ManualSubmitResult => {
-    const persisted = persistCredentialsToProfile(credentials, resolveProfileDir(), logger);
+    const persisted = persistCredentialsToProfile(credentials, resolveProfileDir(), logger, ns);
     return persisted ? { persisted: true } : { persisted: false, error: '无法定位 profile 目录或写入失败，请改用环境变量配置' };
   };
   const handleManualSubmit = options.onManualCredentials ?? defaultManual;
@@ -212,31 +221,31 @@ export function registerBindRoutes(
   const disposers = [
     webServer.register({
       kind: 'exact',
-      path: BIND_STATE_PATH,
+      path: bindStatePath(ns),
       handler: (req, res) => { handleState(req, res, service, options); },
     }),
     webServer.register({
       kind: 'exact',
-      path: BIND_REFRESH_PATH,
+      path: bindRefreshPath(ns),
       handler: (req, res) => { handleRefresh(req, res, service); },
     }),
     webServer.register({
       kind: 'exact',
-      path: BIND_MANUAL_PATH,
+      path: bindManualPath(ns),
       handler: (req, res) => handleManual(req, res, handleManualSubmit),
     }),
     webServer.register({
       kind: 'exact',
-      path: BIND_UNBIND_PATH,
+      path: bindUnbindPath(ns),
       handler: (req, res) => handleUnbind(req, res, options),
     }),
     webServer.register({
       kind: 'exact',
-      path: BIND_CONFIG_PATH,
+      path: bindConfigPath(ns),
       handler: (req, res) => handleConfig(req, res, options),
     }),
   ];
-  logger.info(`im-qqbot: 端内绑定页已就绪: ${BIND_STATE_PATH}`);
+  logger.info(`im-qqbot: 端内绑定页已就绪: ${bindStatePath(ns)}`);
   return () => { for (const dispose of disposers) dispose(); };
 }
 
@@ -381,7 +390,7 @@ function handleUnbind(req: IncomingMessage, res: ServerResponse, options: BindRo
   }
   const result: UnbindResult = options.onUnbind === undefined
     ? (() => {
-        const removed = removeCredentialsFromProfile(profileDirOf(options), undefined);
+        const removed = removeCredentialsFromProfile(profileDirOf(options), undefined, options.settingsNs ?? DEFAULT_BIND_NS);
         if (removed) {
           // 清除进程内凭据：扫码绑定成功时会写入 env（供热更新后的下次
           // apply 兜底读取）；不清则 HMR 重载后新 fiber 仍从 env 读到
@@ -465,7 +474,7 @@ async function handleConfig(req: IncomingMessage, res: ServerResponse, options: 
   }
 
   const persisted = options.onUpdateConfig === undefined
-    ? updateProfileConfig(validated, profileDirOf(options), undefined)
+    ? updateProfileConfig(validated, profileDirOf(options), undefined, options.settingsNs ?? DEFAULT_BIND_NS)
     : options.onUpdateConfig(validated);
   if (!persisted) {
     sendJson(res, 500, { ok: false, error: '无法定位 profile 目录或写入失败' });
