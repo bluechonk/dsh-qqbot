@@ -221,7 +221,7 @@ export class SessionManager {
     }
 
     const childId = SessionId(randomUUID());
-    const effectiveRoute = options.route ?? this.modelResolver.getEffectiveRoute(key);
+    const effectiveRoute = options.route ?? await this.modelResolver.getEffectiveRouteChecked(key);
     const composed = await this.composePreset(this.getEffectivePresetByKey(key));
     const created = await this.agents.create({
       sessionId: childId,
@@ -391,7 +391,9 @@ export class SessionManager {
       return existing;
     }
 
-    const route = this.modelResolver.getEffectiveRoute(key);
+    // 先查模型能力再解析路由：模型不支持思考强度时注入会让整轮失败
+    //（宿主对 reasoningEffort 是硬校验，抛 UNSUPPORTED_REASONING_EFFORT）
+    const route = await this.modelResolver.getEffectiveRouteChecked(key);
 
     // ⚠️ preset 在会话**创建时**就固定了，`agents.resume()` 改不了它
     //（resume 只接受 agentOptions 与 setup，没有 preset 参数）。
@@ -427,7 +429,7 @@ export class SessionManager {
       const composed = await this.composePreset(presetId);
       agentPreset = composed.agentPreset;
       try {
-        const resumeRoute = this.modelResolver.getResumeRoute(key);
+        const resumeRoute = await this.modelResolver.getResumeRouteChecked(key);
         const resumed = await this.agents.resume({
           resumeSessionId: sessionId,
           ...(resumeRoute ? { agentOptions: resumeRoute } : {}),

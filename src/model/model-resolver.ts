@@ -23,6 +23,27 @@ import { SettingsReader } from './settings-reader.ts';
 interface LlmServiceLike {
   listProviders(): Array<{ id: string; name: string }> | string[];
   listModels(providerId: string): Promise<readonly { id: string; name?: string }[]>;
+  /**
+   * 查询单个 provider/model 的能力元数据（可选：旧版宿主没有这个方法）。
+   *
+   * 关键用途：`reasoning` 字段决定这个模型支不支持思考强度。
+   * 不查就注入 `reasoningEffort` 会让**整轮直接失败**——
+   * 宿主源码：模型没有 reasoning 能力时，只要传了值就抛
+   * `UNSUPPORTED_REASONING_EFFORT`。
+   */
+  resolveModelInfo?(
+    provider: string,
+    model: string,
+    signal?: AbortSignal,
+  ): Promise<{ reasoning?: { efforts?: readonly { id: string }[] } }>;
+}
+
+/** 模型对思考强度的支持情况（查过一次就缓存） */
+interface ReasoningCapability {
+  /** 模型是否暴露 reasoning 能力 */
+  supported: boolean;
+  /** 支持的档位 id */
+  efforts: Set<string>;
 }
 
 export class ModelResolver {
@@ -31,6 +52,8 @@ export class ModelResolver {
   private readonly ctx: Context;
   private readonly config: ImQQBotConfig;
   private readonly logger?: Logger;
+  /** `${provider}/${model}` → 思考强度支持情况（查过一次就缓存） */
+  private readonly reasoningCaps = new Map<string, ReasoningCapability>();
 
   constructor(
     ctx: Context,
@@ -56,6 +79,18 @@ export class ModelResolver {
   }
 
   /**
+   * 同 `getEffectiveRoute`，但**先查模型能力**再决定要不要注入思考强度。
+   *
+   * 建会话必须走这个版本：模型不支持 reasoning 时注入 `reasoningEffort`
+   * 会让整轮直接抛 `UNSUPPORTED_REASONING_EFFORT`（宿主源码里是硬校验）。
+   */
+  async getEffectiveRouteChecked(sessionKey: string): Promise<ModelRoute | undefined> {
+    const base = this.prefs.getOverride(sessionKey) ?? this.resolveDefault();
+    await this.ensureReasoningCapability(base.provider, base.model);
+    return this.withReasoning(base);
+  }
+
+  /**
    * 获取 resume 时覆盖 session 的模型路由
    *
    * 优先级：per-peer 偏好 > cordis.yml 显式配置 > 默认链（settings.yaml > host）
@@ -76,17 +111,87 @@ export class ModelResolver {
     return this.withReasoning(this.resolveDefault());
   }
 
+  /** 同 `getResumeRoute`，但先查模型能力 */
+  async getResumeRouteChecked(sessionKey: string): Promise<ModelRoute | undefined> {
+    const override = this.prefs.getOverride(sessionKey);
+    const base = override
+      ?? (this.config.provider && this.config.model
+        ? { provider: this.config.provider, model: this.config.model }
+        : this.resolveDefault());
+    await this.ensureReasoningCapability(base.provider, base.model);
+    return this.withReasoning(base);
+  }
+
+  /**
+   * 查询并缓存某模型的思考强度支持情况。
+   *
+   * 查不到（服务缺失/旧版宿主/查询失败）就**不缓存**，保持「未知」状态——
+   * 未知时 `withReasoning` 选择不注入，因为注入的代价是整轮失败，
+   * 而不注入只是少一个偏好。
+   */
+  async ensureReasoningCapability(provider: string, model: string): Promise<void> {
+    const key = `${provider}/${model}`;
+    if (this.reasoningCaps.has(key)) return;
+
+    const llm = this.getLlmService();
+    if (!llm?.resolveModelInfo) return;
+
+    try {
+      const info = await llm.resolveModelInfo(provider, model);
+      const reasoning = info?.reasoning;
+      if (reasoning === undefined) {
+        this.reasoningCaps.set(key, { supported: false, efforts: new Set() });
+        return;
+      }
+      const efforts = new Set((reasoning.efforts ?? []).map((e) => e.id));
+      this.reasoningCaps.set(key, { supported: true, efforts });
+    } catch (err) {
+      // 保持未知，不缓存；下次还会重试
+      this.logger?.debug(
+        `ModelResolver: ${key} 思考强度能力查询失败: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   /**
    * 把配置里的思考强度注入路由。
    *
    * 未配置时**不写这个字段**（undefined 与「显式 off」是两回事）：
    * 前者让宿主/模型自己决定，后者是明确关掉思考。
+   *
+   * ⚠️ 但**只在模型确实支持时才注入**。宿主对 `reasoningEffort` 是硬校验：
+   * 模型没有 reasoning 能力时，传任何值都会抛 `UNSUPPORTED_REASONING_EFFORT`，
+   * 整轮直接失败、用户只看到一句报错。
+   * 实测踩过：`longcat/LongCat-2.5-Preview` 不支持，而配置里是 `off`。
    */
   private withReasoning(route: ModelRoute | undefined): ModelRoute | undefined {
     const effort = this.config.reasoningEffort;
     if (route === undefined || effort === undefined || effort === null) return route;
     // 设置面板用空串表示"不覆盖"，这里同样归一化掉
     if (String(effort) === '') return route;
+
+    const cap = this.reasoningCaps.get(`${route.provider}/${route.model}`);
+    if (cap === undefined) {
+      // 未知 → 不注入（注入可能直接让整轮失败）。留痕，避免静默降级。
+      this.logger?.debug(
+        `ModelResolver: ${route.provider}/${route.model} 思考强度能力未知，本次不注入 ${String(effort)}`,
+      );
+      return route;
+    }
+    if (!cap.supported) {
+      // 模型根本没有 reasoning 能力 → 它永远处于「关思考」，注入没有意义
+      this.logger?.debug(
+        `ModelResolver: ${route.provider}/${route.model} 不支持思考强度，忽略配置值 ${String(effort)}`,
+      );
+      return route;
+    }
+    if (!cap.efforts.has(String(effort))) {
+      this.logger?.warn(
+        `ModelResolver: ${route.provider}/${route.model} 不支持思考强度 ${String(effort)}`
+        + `（可选：${[...cap.efforts].join('/') || '无'}），本次不注入`,
+      );
+      return route;
+    }
     return { ...route, reasoningEffort: effort as ModelRoute['reasoningEffort'] };
   }
 
