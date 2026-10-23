@@ -8,6 +8,7 @@
 import { resolve } from 'node:path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import yaml from 'js-yaml';
+import { DEFAULT_INSTANCE_NS } from '../shared/bind-protocol.ts';
 
 /** 凭据结果 */
 export interface SetupCredentials {
@@ -16,7 +17,7 @@ export interface SetupCredentials {
 }
 
 /** 默认 patch 条目 id（单实例；多实例时每实例一个，如 `im-qqbot-1`） */
-export const DEFAULT_PATCH_ENTRY_ID = 'im-qqbot';
+export const DEFAULT_PATCH_ENTRY_ID = DEFAULT_INSTANCE_NS;
 
 /** cordis.patch.yml 中的 patch 条目 */
 interface PatchEntry {

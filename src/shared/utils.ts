@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, resolve } from 'node:path';
+import { DEFAULT_INSTANCE_NS } from './bind-protocol.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -155,12 +156,17 @@ export function formatRelativeTime(ts?: number): string {
  * 否则群友档案 / 表情包库会被多个机器人共用——它们是不同的"人"，
  * 对群友的称呼与亲疏应当各自独立。
  *
- * 不传 settingsNs 时保持 `~/.dsh-qqbot/`，单实例行为逐字不变。
+ * ⚠️ **默认实例不分子目录**，数据仍在 `~/.dsh-qqbot/`。
+ * 这一点是硬要求：`config.settingsNs` 有 schema 默认值，所以插件**总是**
+ * 会传进来一个非空 ns；若只判断「有没有 ns」，默认实例的数据会被搬进
+ * `~/.dsh-qqbot/im-qqbot/`——单实例行为就变了，而且排查脚本还指着老路径，
+ * 调试时看到的是陈旧日志（实测踩过）。
  */
 export function pluginDataDir(settingsNs?: string): string {
   const base = resolve(os.homedir(), '.dsh-qqbot');
   const ns = settingsNs?.trim();
-  return ns ? resolve(base, ns) : base;
+  if (!ns || ns === DEFAULT_INSTANCE_NS) return base;
+  return resolve(base, ns);
 }
 
 /**

@@ -3,6 +3,7 @@
  */
 import Schema from '@deepseek-ai/schemastery';
 import type { ReasoningEffort } from './model/types.ts';
+import { DEFAULT_INSTANCE_NS } from './shared/bind-protocol.ts';
 
 /** 思考强度合法值（与 dsh-llm 的 ReasoningEffortId 对齐） */
 export const REASONING_EFFORT_VALUES = ['off', 'low', 'medium', 'high', 'max'] as const;
@@ -80,13 +81,16 @@ export interface SendFileConfig {
 export const FIXED_PRESET_ID = 'qqchat';
 
 /**
- * 默认实例命名空间（loader 行 id）。
+ * 默认实例命名空间（= loader 行 id）。
  *
  * 多实例时每个实例必须有一个唯一 `settingsNs`：它决定绑定路由路径、
  * Web 设置分区 id、凭据落盘的 patch 条目 id，以及本地数据目录。
  * 缺省保持 `im-qqbot`，所以**单实例行为逐字不变**。
+ *
+ * 常量本身定义在 `shared/bind-protocol.ts`（纯模块，客户端也用），
+ * 这里只是取个别名——四处必须同值，不能各写一份字面量。
  */
-export const DEFAULT_SETTINGS_NS = 'im-qqbot';
+export const DEFAULT_SETTINGS_NS = DEFAULT_INSTANCE_NS;
 
 export interface ImQQBotConfig {
   /** 实例命名空间（多实例时每实例唯一；缺省 `im-qqbot`） */
