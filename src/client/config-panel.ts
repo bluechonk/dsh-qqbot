@@ -588,7 +588,7 @@ export function ConfigPanel(props: { settingsNs?: string }): ReactNode {
     createElement('div', { className: 'imqb2-footer' },
       result !== null
         ? createElement('p', { className: `imqb2-note${result.ok ? ' imqb2-note--ok' : ' imqb2-note--error'}` },
-            (result.ok ? '' : '⚠️ ') + result.message)
+            result.message)
         : dirty
           ? createElement('p', { className: 'imqb2-note' }, '保存后插件将重载，进行中的机器人会话将重置')
           : createElement('p', { className: 'imqb2-note' }),
