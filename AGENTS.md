@@ -58,19 +58,23 @@ node session-log.mjs range '<目标>' 84 95       # 某段完整事件
 比门控晚、比 agent 早。门控有记录但 `people.json` 没更新
 ⇒ 消息在门控之后、agent 之前被丢掉了。
 
-### 3. 中间件链丢弃留痕 —— 上面那条分界线的补充
+### 3. 中间件链留痕 —— 上面那条分界线的补充
 
 「门控有记录但档案没更新」曾经无法进一步定位，因为**链上其他关卡丢弃时纹丝不动**。
-现在有 `~/.dsh-qqbot/middleware-drops.jsonl`：
+现在有 `~/.dsh-qqbot/middleware-events.jsonl`：
 
 | 类别 | 含义 |
 |---|---|
 | `drop` | 消息被丢掉，没进 agent（去重 / 访问控制 / @ 门控 / 限流） |
 | `denied` | 命令被拒（越权，安全审计） |
 | `merge` | N 条消息并成 1 轮（内容不丢，但没有各自的回合） |
+| `handled` | 命令被识别并处理（**不是**丢弃，但要能区分下面两种情况） |
 
-排查顺序：`proactive-scores.jsonl` 有记录 → 看 `middleware-drops.jsonl`
+排查顺序：`proactive-scores.jsonl` 有记录 → 看 `middleware-events.jsonl`
 → 有 `drop`/`merge` 就是链上丢的；没有则是下游（agent / 出站）的问题。
+
+**排查「命令没生效」**：这里没有 `handled` → 命令没被识别（退化成聊天了，
+去会话日志确认它进了 agent）；有 `handled` → 识别了，问题在发送侧。
 
 ## 改完代码怎么生效
 

@@ -139,13 +139,13 @@ if (Test-Path $raw) {
     Note '用途：让某人「戳一戳」机器人，再看这里有没有东西'
 }
 
-# ── 5. 中间件链丢弃留痕 ──
-Section '中间件链丢弃留痕（middleware-drops.jsonl）'
-$drops = Join-Path $DataDir 'middleware-drops.jsonl'
+# ── 5. 中间件链留痕 ──
+Section '中间件链留痕（middleware-events.jsonl）'
+$drops = Join-Path $DataDir 'middleware-events.jsonl'
 if (Test-Path $drops) {
     $dlines = @(Get-Content $drops | Where-Object { $_.Trim() })
     Note "共 $($dlines.Count) 条留痕"
-    # 类别分布：drop=消息被丢  denied=越权命令  merge=并发合并
+    # 类别分布：drop=消息被丢  denied=越权命令  merge=并发合并  handled=命令被处理
     $ddist = @{}
     foreach ($l in $dlines) {
         try {
@@ -156,11 +156,11 @@ if (Test-Path $drops) {
     if ($ddist.Count -gt 0) {
         Note ('类别分布：' + (($ddist.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join '  '))
     }
-    Note 'drop=消息没进 agent  denied=命令被拒（越权）  merge=N 条并成 1 轮'
+    Note 'drop=消息没进 agent  denied=命令被拒（越权）  merge=N 条并成 1 轮  handled=命令被识别并处理'
     Get-Content $drops -Tail $Tail
 } else {
-    Note '不存在（正常）。有群消息后仍无记录，说明链上没有丢弃/合并'
-    Note '用途：机器人「没反应」时先看这里——门控有记录但这里没有，问题在下游'
+    Note '不存在（正常）。有群消息后仍无记录，说明链上没有丢弃/合并/命令'
+    Note '排查「命令没生效」：这里没有 handled → 命令没被识别（退化成聊天，看会话日志）；有 handled → 识别了，问题在发送侧'
 }
 
 # ── 6. 群友档案 ──

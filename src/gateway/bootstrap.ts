@@ -95,11 +95,12 @@ export async function bootstrapGateway(
     idle: new IdleTracker(),
   };
 
-  // ── 中间件链丢弃留痕 ──
+  // ── 中间件链留痕 ──
   // 中间件链上每个关卡都能让消息「消失」，此前只有门控会记日志。
-  // 落盘到 ~/.dsh-qqbot/middleware-drops.jsonl。
+  // 也记命令被识别并处理（handled），否则「命令没生效」分不清是哪种。
+  // 落盘到 ~/.dsh-qqbot/middleware-events.jsonl。
   const dropLog = new MiddlewareDropLog({
-    filePath: pluginDataPath('middleware-drops.jsonl', config.settingsNs),
+    filePath: pluginDataPath('middleware-events.jsonl', config.settingsNs),
     enabled: config.middlewareLog,
   });
 

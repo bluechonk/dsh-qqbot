@@ -1,5 +1,5 @@
 /**
- * 中间件链丢弃留痕
+ * 中间件链留痕
  *
  * 为什么需要它：本项目最大的风险类别是**静默失效**——不报错、不掉线、
  * 测试全绿，只是功能悄悄不对。中间件链上每个关卡都能让一条消息「消失」：
@@ -13,7 +13,11 @@
  * 并发合并（merge）是唯一的例外：被合并的消息**不 stop**，而是并入选定的
  * 幸存者 ctx，因此哨兵看不见。它由 `onMerge` 单独留痕。
  *
- * 落盘：`~/.dsh-qqbot/middleware-drops.jsonl`，与 proactive-scores.jsonl 同目录。
+ * 落盘：`~/.dsh-qqbot/middleware-events.jsonl`（与 proactive-scores.jsonl 同目录）。
+ *
+ * 文件名是 `events` 而不是 `drops`：它记的**不只是丢弃**——命令被识别并处理
+ * （`handled`）同样要留痕，否则「我发的命令没生效」这类问题分不清
+ * 「没被识别」还是「识别了但没回复」。
  */
 import { appendFileSync, mkdirSync, statSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -26,7 +30,16 @@ export type MiddlewareDropKind =
   /** 命令被执行了，但调用者没权限（安全审计用） */
   | 'denied'
   /** 并发合并：N 条消息并成 1 轮（内容不丢，但没有各自的回合） */
-  | 'merge';
+  | 'merge'
+  /**
+   * 命令被识别并处理了。
+   *
+   * 为什么值得记：排查「我发的命令没生效」时，第一步要分清
+   * **命令没被识别**（退化成聊天 → 这里没有记录，看会话日志能看到它进了 agent）
+   * 还是**识别了但没回复**（这里有一条 `handled`，问题在发送侧）。
+   * 早期刻意不记 `command:matched`，结果这个区分做不了（实测踩过）。
+   */
+  | 'handled';
 
 export interface MiddlewareDropEntry {
   ts: number;
@@ -95,15 +108,16 @@ export class MiddlewareDropLog {
 /**
  * 把 stop 原因归类。
  *
- * 返回 `undefined` 表示**不该记**：`command:matched:*` 是命令被正常处理，
- * 消息没有丢，记下来只会淹没真正的丢弃。
+ * 返回 `undefined` 只表示「没有 stop」（链正常走完）。
  *
- * 返回 `'denied'` 的是命令级拒绝（权限/作用域）——命令本身回了一句拒绝文案，
- * 但「谁试图越权」值得单独留痕。
+ * 四类的分法：
+ *   - `command:matched:*` → `handled`（命令被识别并处理了，**不是**丢弃）
+ *   - `command:unauthorized:*` / `command:scope-denied:*` → `denied`（越权，安全审计）
+ *   - 其余一律 `drop`
  */
 export function classifyStopReason(reason: string | undefined): MiddlewareDropKind | undefined {
   if (reason === undefined) return undefined;
-  if (reason.startsWith('command:matched:')) return undefined;
+  if (reason.startsWith('command:matched:')) return 'handled';
   if (reason.startsWith('command:unauthorized:') || reason.startsWith('command:scope-denied:')) {
     return 'denied';
   }

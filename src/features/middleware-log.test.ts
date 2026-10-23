@@ -23,8 +23,8 @@ function tempLog(enabled = true): { log: MiddlewareDropLog; file: string; dir: s
   const dir = mkdtempSync(join(tmpdir(), 'mwlog-'));
   return {
     dir,
-    file: join(dir, 'middleware-drops.jsonl'),
-    log: new MiddlewareDropLog({ filePath: join(dir, 'middleware-drops.jsonl'), enabled }),
+    file: join(dir, 'middleware-events.jsonl'),
+    log: new MiddlewareDropLog({ filePath: join(dir, 'middleware-events.jsonl'), enabled }),
   };
 }
 
@@ -37,9 +37,12 @@ describe('classifyStopReason', () => {
     expect(classifyStopReason(undefined)).toBeUndefined();
   });
 
-  it('命令被正常处理不记（消息没丢，记了只会淹没真正的丢弃）', () => {
-    expect(classifyStopReason('command:matched:model')).toBeUndefined();
-    expect(classifyStopReason('command:matched:bot-help')).toBeUndefined();
+  it('命令被识别并处理记为 handled（不是丢弃，但要留痕）', () => {
+    // 为什么必须记：排查「我发的命令没生效」要分清
+    // 「没被识别」（这里没记录，会话日志里能看到它进了 agent）
+    // 与「识别了但没回复」（这里有记录，问题在发送侧）
+    expect(classifyStopReason('command:matched:model')).toBe('handled');
+    expect(classifyStopReason('command:matched:bot-help')).toBe('handled');
   });
 
   it('命令级拒绝记为 denied（安全审计）', () => {
@@ -167,6 +170,17 @@ describe('chainSentinel', () => {
       const { ctx } = fakeCtx();
       await chainSentinel(log)(ctx, async () => { ctx.stop('command:unauthorized:model'); });
       expect(lines(file)[0]).toMatchObject({ kind: 'denied' });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('命令被处理记为 handled（能据此区分「没被识别」与「识别了没回复」）', async () => {
+    const { log, file, dir } = tempLog();
+    try {
+      const { ctx } = fakeCtx();
+      await chainSentinel(log)(ctx, async () => { ctx.stop('command:matched:model'); });
+      expect(lines(file)[0]).toMatchObject({ kind: 'handled', reason: 'command:matched:model' });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
