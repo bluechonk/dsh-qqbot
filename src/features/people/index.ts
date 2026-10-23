@@ -6,3 +6,4 @@
  */
 export * from './format.ts';
 export * from './store.ts';
+export { getPeopleStore, flushPeopleStoreIfCreated, resetPeopleStore } from './singleton.ts';

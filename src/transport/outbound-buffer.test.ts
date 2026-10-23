@@ -22,11 +22,11 @@ function createBot(openStreamImpl?: () => StreamSessionLike): QQBotSender {
 function createRecord(target: ReplyTarget): SessionRecord {
   return {
     sessionId: 's1',
-    key: 'k',
+    sessionKey: 'k',
     replyTarget: target,
     agent: {},
     createdAt: 0,
-    lastActiveAt: 0,
+    lastActivity: 0,
   } as unknown as SessionRecord;
 }
 

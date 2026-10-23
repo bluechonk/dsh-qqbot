@@ -104,3 +104,58 @@ describe('PeopleStore', () => {
       .toEqual(['私下']);
   });
 });
+
+/**
+ * 写盘节流。
+ *
+ * 这组测试的由来：群聊密集时（消息间隔 < 5 秒）flush() 会一直跳过写盘，
+ * `dirty` 一直为真。**宿主退出时若不强制落盘，内存里的档案就全丢了**——
+ * 丢的正是最有价值的部分（学到的别名）。
+ * 所以 bootstrap 关闭时必须调 flush(true)。
+ */
+describe('PeopleStore 写盘节流', () => {
+  it('节流窗口内 flush() 不写盘', () => {
+    const file = tempFile();
+    const store = new PeopleStore({ filePath: file, enabled: true });
+    store.touch({ ...BASE, appId: 'a', alias: '主人' });
+    // 第一次 touch 已经写过一次，紧接着再改一次
+    store.touch({ ...BASE, appId: 'a', alias: '老板' });
+    store.flush(); // 仍在窗口内 → 跳过
+    const onDisk = JSON.parse(readFileSync(file, 'utf8')) as {
+      people: Record<string, { aliases: string[] }>;
+    };
+    const entry = Object.values(onDisk.people)[0]!;
+    expect(entry.aliases).not.toContain('老板');
+  });
+
+  it('flush(true) 强制写盘，绕过节流', () => {
+    const file = tempFile();
+    const store = new PeopleStore({ filePath: file, enabled: true });
+    store.touch({ ...BASE, appId: 'a', alias: '主人' });
+    store.touch({ ...BASE, appId: 'a', alias: '老板' });
+    store.flush(true);
+    const onDisk = JSON.parse(readFileSync(file, 'utf8')) as {
+      people: Record<string, { aliases: string[] }>;
+    };
+    const entry = Object.values(onDisk.people)[0]!;
+    expect(entry.aliases).toContain('老板');
+  });
+
+  it('密集消息后强制落盘，不丢任何一条', () => {
+    const file = tempFile();
+    const store = new PeopleStore({ filePath: file, enabled: true });
+    // 模拟群聊刷屏：连续 10 条，间隔远小于节流窗口
+    for (let i = 0; i < 10; i++) store.touch({ ...BASE, appId: 'a' });
+    store.flush(true);
+
+    const reloaded = new PeopleStore({ filePath: file, enabled: true });
+    expect(reloaded.get({ ...BASE, appId: 'a' })?.count).toBe(10);
+  });
+
+  it('没有改动时 flush 不产生文件（不写空档案）', () => {
+    const file = tempFile();
+    const store = new PeopleStore({ filePath: file, enabled: true });
+    store.flush(true);
+    expect(() => readFileSync(file, 'utf8')).toThrow();
+  });
+});

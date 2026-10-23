@@ -171,7 +171,7 @@ export class SessionManager {
   }
 
   /**
-   * 切换模型（fork + 重建会话，保留历史）
+   * 切换模型（重建会话，保留历史）
    */
   async setModelOverride(scope: ChatScope, peerId: string, route: ModelRoute): Promise<void> {
     const key = this.sessionKey(scope, peerId);
@@ -185,14 +185,17 @@ export class SessionManager {
     }
 
     await this.rebuildSession(record, { route });
-    this.logger.info(`model switched via fork: key=${key} → ${route.provider}/${route.model}`);
+    this.logger.info(`model switched (session rebuilt): key=${key} → ${route.provider}/${route.model}`);
   }
 
   /**
-   * fork + 重建会话（保留历史，换 model）
+   * 重建会话（保留历史，换 model）
    *
    * options.route 缺省时沿用当前生效值。preset 沿用当前生效 preset（getEffectivePresetByKey）。
-   * fork 不可用或失败时降级为 dispose（下次消息重建）。
+   * 取不到源会话事件时降级为 dispose（下次消息重建）。
+   *
+   * 注意：**不用 `sessions.fork()`**。它返回的是新建的子会话对象而非事件数组，
+   * 且每次调用都会真的建一个会话（留孤儿）。详见 `snapshotSessionEvents` 的说明。
    */
   private async rebuildSession(
     record: SessionRecord,
@@ -243,7 +246,7 @@ export class SessionManager {
     record.lastActivity = Date.now();
 
     void oldHandle.dispose().catch(() => {});
-    this.logger.info(`session rebuilt via fork: key=${key} preset=${composed.agentPreset ?? 'none'} sessionId=${childId}`);
+    this.logger.info(`session rebuilt: key=${key} preset=${composed.agentPreset ?? 'none'} sessionId=${childId}`);
   }
 
   clearModelOverride(scope: ChatScope, peerId: string): void {

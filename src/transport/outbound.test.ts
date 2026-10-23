@@ -40,7 +40,7 @@ function createRecord(target: ReplyTarget, sessionId = 'sess-qq'): SessionRecord
     agent: {},
     handle: {},
     createdAt: 0,
-    lastActiveAt: 0,
+    lastActivity: 0,
   } as unknown as SessionRecord;
 }
 

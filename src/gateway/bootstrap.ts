@@ -31,6 +31,7 @@ import { proactiveDataPath } from '../features/proactive/index.ts';
 import { RawEventLog } from '../features/raw-event-log.ts';
 import { GroupActivity } from '../features/proactive/activity.ts';
 import { IdleTracker } from '../features/idle-topic/index.ts';
+import { flushPeopleStoreIfCreated } from '../features/people/index.ts';
 
 /**
  * interaction 统一分发器：按 button_data 的顶层 `t` 判别字段，路由到对应
@@ -231,6 +232,8 @@ export async function bootstrapGateway(
 
       return async () => {
         logger.info('Shutting down');
+        // 档案写盘有 5 秒节流，群聊密集时可能一直没落盘 → 关闭前强制写一次
+        flushPeopleStoreIfCreated();
         await manager.disposeAll();
         bot.stop();
       };

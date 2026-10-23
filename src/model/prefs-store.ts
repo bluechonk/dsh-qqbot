@@ -15,7 +15,7 @@ type DebugFn = (msg: string) => void;
 /** 隔离偏好文件结构 */
 interface PrefsFile {
   overrides: Record<string, ModelRoute>;
-  /** sessionKey → 最新 sessionId（fork 后更新，用于重启后恢复到 fork 后的会话） */
+  /** sessionKey → 最新 sessionId（重建会话后更新，用于重启后恢复到重建后的会话） */
   sessionIds: Record<string, string>;
   /** sessionKey → preset id（per-peer preset 覆盖） */
   presets: Record<string, string>;
@@ -24,7 +24,7 @@ interface PrefsFile {
 export class PrefsStore {
   /** per-peer 模型偏好（内存态） */
   private overrides = new Map<string, ModelRoute>();
-  /** per-peer 最新 sessionId（fork 后更新，内存态） */
+  /** per-peer 最新 sessionId（重建会话后更新，内存态） */
   private sessionIds = new Map<string, string>();
   /** per-peer preset 偏好（内存态） */
   private presets = new Map<string, string>();
