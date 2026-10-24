@@ -47,7 +47,15 @@ function silentLogger() {
 
 const BASE = { scope: 'group' as const, scopeId: 'g1' };
 
-function makeTrigger(responses: string[], opts?: Partial<{ summarizeEveryTurns: number; failAt: number }>) {
+function makeTrigger(
+  responses: string[],
+  opts?: Partial<{
+    summarizeEveryTurns: number;
+    failAt: number;
+    model?: { provider: string; model: string };
+    resolver?: (scope: 'group', scopeId: string) => { provider: string; model: string } | undefined;
+  }>,
+) {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-qqbot-trigger-'));
   dirs.push(dir);
   const store = new PeopleStore({ filePath: join(dir, 'people.json'), enabled: true });
@@ -56,7 +64,7 @@ function makeTrigger(responses: string[], opts?: Partial<{ summarizeEveryTurns: 
   const trigger = new MemoryTrigger(
     {
       appId: 'a',
-      model: { provider: 'p', model: 'm' },
+      model: opts?.model ?? { provider: 'p', model: 'm' },
       summarizeEveryTurns: opts?.summarizeEveryTurns ?? 2,
       maxFacts: 8,
       maxInputChars: 4000,
@@ -64,6 +72,7 @@ function makeTrigger(responses: string[], opts?: Partial<{ summarizeEveryTurns: 
     },
     llm,
     store,
+    opts?.resolver,
   );
   return { trigger, store };
 }
@@ -162,14 +171,49 @@ describe('MemoryTrigger', () => {
     expect(store.memoryOf({ ...BASE, appId: 'a', openid: 'u1' })).toBeUndefined();
   });
 
-  it('provider/model 未配置时同样惰性', () => {
+  it('未配置摘要模型但有解析回调 → 跟随当前会话的模型', async () => {
+    const captured: { options?: unknown } = {};
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-qqbot-trigger-'));
+    dirs.push(dir);
+    const store = new PeopleStore({ filePath: join(dir, 'people.json'), enabled: true });
+    const llm = {
+      async *stream(options: never) {
+        captured.options = options;
+        yield { type: 'block-start', index: 0, blockType: 'text' } as StreamChunk;
+        yield { type: 'text-delta', index: 0, text: '{"facts":["x"]}' } as StreamChunk;
+        yield { type: 'block-end', index: 0, block: { type: 'text', text: '{"facts":["x"]}' } } as StreamChunk;
+        yield { type: 'finish', reason: { kind: 'stop' } } as StreamChunk;
+      },
+    };
+    const trigger = new MemoryTrigger(
+      {
+        appId: 'a',
+        summarizeEveryTurns: 1,
+        maxFacts: 8,
+        maxInputChars: 4000,
+        logger: silentLogger(),
+      },
+      llm as never,
+      store,
+      () => ({ provider: 'rp', model: 'rm' }),
+    );
+    store.touch({ ...BASE, appId: 'a', openid: 'u1' }); // 生产路径：inbound 每条消息先 touch
+    trigger.recordTurn({ ...BASE, openid: 'u1', text: '你好' });
+    await settle();
+
+    const options = captured.options as { provider: string; model: string };
+    expect(options.provider).toBe('rp');
+    expect(options.model).toBe('rm');
+    expect(store.memoryOf({ ...BASE, appId: 'a', openid: 'u1' })?.facts).toHaveLength(1);
+  });
+
+  it('未配置模型且无法解析 → 跳过并留痕', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-qqbot-trigger-'));
     dirs.push(dir);
     const store = new PeopleStore({ filePath: join(dir, 'people.json'), enabled: true });
     const trigger = new MemoryTrigger(
       {
         appId: 'a',
-        model: { provider: '', model: '' },
         summarizeEveryTurns: 1,
         maxFacts: 8,
         maxInputChars: 4000,
@@ -177,9 +221,44 @@ describe('MemoryTrigger', () => {
       },
       makeLlm(['{"facts":["x"]}']),
       store,
+      () => undefined,
     );
-    expect(trigger.usable).toBe(false);
-    expect(() => trigger.recordTurn({ ...BASE, openid: 'u1', text: '你好' })).not.toThrow();
+    trigger.recordTurn({ ...BASE, openid: 'u1', text: '你好' });
+    await settle();
     expect(store.memoryOf({ ...BASE, appId: 'a', openid: 'u1' })).toBeUndefined();
+  });
+
+  it('显式配置的模型优先于会话模型', async () => {
+    const captured: { options?: unknown } = {};
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-qqbot-trigger-'));
+    dirs.push(dir);
+    const store = new PeopleStore({ filePath: join(dir, 'people.json'), enabled: true });
+    const llm = {
+      async *stream(options: never) {
+        captured.options = options;
+        yield { type: 'block-start', index: 0, blockType: 'text' } as StreamChunk;
+        yield { type: 'text-delta', index: 0, text: '{"facts":["x"]}' } as StreamChunk;
+        yield { type: 'block-end', index: 0, block: { type: 'text', text: '{"facts":["x"]}' } } as StreamChunk;
+        yield { type: 'finish', reason: { kind: 'stop' } } as StreamChunk;
+      },
+    };
+    const trigger = new MemoryTrigger(
+      {
+        appId: 'a',
+        model: { provider: 'explicit', model: 'model-explicit' },
+        summarizeEveryTurns: 1,
+        maxFacts: 8,
+        maxInputChars: 4000,
+        logger: silentLogger(),
+      },
+      llm as never,
+      store,
+      () => ({ provider: 'session', model: 'model-session' }),
+    );
+    trigger.recordTurn({ ...BASE, openid: 'u1', text: '你好' });
+    await settle();
+
+    const options = captured.options as { provider: string };
+    expect(options.provider).toBe('explicit');
   });
 });
