@@ -156,18 +156,21 @@ export async function bootstrapGateway(
     llm: llm !== undefined,
   });
 
-  // ── 长期记忆触发器（默认关：people.memory.enabled=false 时全程惰性） ──
-  // 依赖两个前置：群友档案必须开着（档案 key 是记忆的落点）、摘要模型必须配了。
-  // 任一不满足就不构造，注入与摘要彻底不发生（构造函数里会 warn 具体缺什么）。
+  // ── 长期记忆触发器 ──
+  // 依赖两个前置：群友档案必须开着（档案 key 是记忆的落点）、llm 服务可用。
+  // 摘要模型：显式配置（people.memory.provider/model）优先；
+  // 未配置则跟随当前会话正在使用的模型（per-peer 偏好 > 配置 > 宿主默认）。
   const memory = config.people.enabled && config.people.memory.enabled
     ? new MemoryTrigger(
         {
           appId: config.appId,
-          model: {
-            provider: config.people.memory.provider,
-            model: config.people.memory.model,
-            maxTokens: config.people.memory.maxTokens,
-          },
+          model: config.people.memory.provider && config.people.memory.model
+            ? {
+                provider: config.people.memory.provider,
+                model: config.people.memory.model,
+                maxTokens: config.people.memory.maxTokens,
+              }
+            : undefined,
           summarizeEveryTurns: config.people.memory.summarizeEveryTurns,
           maxFacts: config.people.memory.maxFacts,
           maxInputChars: config.people.memory.maxInputChars,
@@ -175,6 +178,7 @@ export async function bootstrapGateway(
         },
         llm,
         getPeopleStore(true, config.settingsNs),
+        (scope, scopeId) => manager.getEffectiveModel(scope, scopeId),
       )
     : undefined;
 
