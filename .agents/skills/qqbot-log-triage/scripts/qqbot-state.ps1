@@ -93,6 +93,8 @@ if ($procs.Count -eq 0) {
             Note "admin.enabled=$($c.admin.enabled)  admin.openids=$($c.admin.openids -join ',')"
             Note "proactive.enabled=$($c.proactive.enabled)  minScore=$($c.proactive.minScore)  maxPerHour=$($c.proactive.maxPerHour)"
             Note "people.enabled=$($c.people.enabled)  antiRepeat.enabled=$($c.antiRepeat.enabled)  stickers.enabled=$($c.stickers.enabled)"
+            Note "memory.enabled=$($c.people.memory.enabled)  memory.model=$($c.people.memory.provider)/$($c.people.memory.model)"
+            Note "contextSnapshot=$($c.contextSnapshot)  quietHours=$($c.quietHours.enabled) $($c.quietHours.start)-$($c.quietHours.end)"
         } catch {
             Warn "配置路由读取失败：$($_.Exception.Message)"
         }
