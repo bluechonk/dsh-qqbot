@@ -21,6 +21,7 @@ import {
 } from './attachment.ts';
 import { clearGroupHistory } from '../features/history-store.ts';
 import { buildProfileLine, buildMemoryLine, extractAlias, getPeopleStore, type MemoryTrigger } from '../features/people/index.ts';
+import { isQuietNow, QUIET_HINT_LINE } from '../features/quiet-hours.ts';
 import { buildRecentRepliesLine, getReplyHistory } from '../features/anti-repeat/index.ts';
 import type { ProactiveDecision } from '../features/proactive/types.ts';
 import type { MiddlewareContext } from '@tencent-connect/qqbot-nodejs';
@@ -131,6 +132,13 @@ export async function handleInbound(
   // ── 群聊氛围：话多人设最容易在群里刷屏，用硬上下文把「收着点」钉住 ──
   const ambientLine = buildAmbientLine(scope === 'group');
 
+  // ── 作息（深夜模式）：提示她轻声简短（是否接话由门控决定）──
+  const quietLine = isQuietNow(
+    config.quietHours.enabled,
+    config.quietHours.start,
+    config.quietHours.end,
+  ) ? QUIET_HINT_LINE : '';
+
   // ── 长期记忆：把上一轮积累的事实注入旁白（紧跟档案行，同样走旁白区） ──
   const memoryLine = config.people.memory.enabled
     ? buildMemoryLine(profile?.memory, {
@@ -150,7 +158,7 @@ export async function handleInbound(
 
   // ── 组装 agentBody（下载结果经 mwState.downloadedFiles 提供） ──
   const agentBody = assembleAgentBody(
-    msg, mwState, scope, logger, `${ambientLine}${profileLine}${memoryLine}${recentLine}`,
+    msg, mwState, scope, logger, `${quietLine}${ambientLine}${profileLine}${memoryLine}${recentLine}`,
   );
 
   if (!agentBody) return;

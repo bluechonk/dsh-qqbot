@@ -68,5 +68,5 @@ export interface ProactiveDecision {
   /** 判定理由 */
   reason?: string;
   /** 拦截原因（mode=observed 且被拦时） */
-  blocked?: 'not-worth' | 'cooldown' | 'hourly-cap';
+  blocked?: 'not-worth' | 'cooldown' | 'hourly-cap' | 'quiet-hours';
 }

@@ -155,6 +155,8 @@ export interface ImQQBotConfig {
   admin: AdminConfig;
   /** 自主接话（判断是否参与群聊对话） */
   proactive: ProactiveConfig;
+  /** 作息（深夜装睡：安静时段不接话） */
+  quietHours: QuietHoursConfig;
   /** 群友档案（记住谁是谁） */
   people: PeopleConfig;
   /** 防复读（别把自己变成复读机） */
@@ -226,6 +228,16 @@ export interface PeopleMemoryConfig {
   maxInputChars: number;
 }
 
+/** 作息（quiet hours / 深夜装睡）配置 */
+export interface QuietHoursConfig {
+  /** 是否启用 */
+  enabled: boolean;
+  /** 安静时段起点 HH:mm（含） */
+  start: string;
+  /** 安静时段终点 HH:mm（不含），支持跨天 */
+  end: string;
+}
+
 /** 群友档案配置 */
 export interface PeopleConfig {
   /** 是否启用群友档案（记住昵称、称呼、互动次数） */
@@ -278,6 +290,13 @@ export const AntiRepeatSchema: Schema<AntiRepeatConfig> = Schema.object({
   enabled: Schema.boolean().default(true).description('启用防复读（把「你最近说过」前置给模型）'),
   historySize: Schema.number().default(5).description('记住自己最近几条发言'),
 }).description('防复读（别把自己变成复读机）');
+
+/** 作息子 Schema */
+export const QuietHoursSchema: Schema<QuietHoursConfig> = Schema.object({
+  enabled: Schema.boolean().default(true).description('启用作息（安静时段未点名不接话）'),
+  start: Schema.string().default('22:00').description('安静时段起点 HH:mm（含）'),
+  end: Schema.string().default('07:00').description('安静时段终点 HH:mm（不含，支持跨天）'),
+}).description('作息（深夜装睡）');
 
 /** 群友长期记忆子 Schema */
 export const PeopleMemorySchema: Schema<PeopleMemoryConfig> = Schema.object({
@@ -354,6 +373,11 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
     minLength: 6,
     observer: true,
   }).description('自主接话（判断是否参与群聊对话）'),
+  quietHours: QuietHoursSchema.default({
+    enabled: true,
+    start: '22:00',
+    end: '07:00',
+  }).description('作息（深夜装睡：安静时段未点名不接话）'),
   people: PeopleSchema.default({
     enabled: true,
     maxAliases: 2,

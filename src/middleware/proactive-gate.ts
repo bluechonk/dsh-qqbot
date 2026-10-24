@@ -15,6 +15,7 @@ import type { MiddlewareContext } from '@tencent-connect/qqbot-nodejs';
 import type { ImQQBotConfig } from '../config.ts';
 import type { Logger } from '../types.ts';
 import { createLexicalGate, stripMentions } from '../features/proactive/lexical-gate.ts';
+import { isQuietNow } from '../features/quiet-hours.ts';
 import type { ProactiveDecision } from '../features/proactive/types.ts';
 import type { ProactiveCooldown } from '../features/proactive/cooldown.ts';
 import type { ProactiveObserver } from '../features/proactive/observer.ts';
@@ -59,6 +60,7 @@ function detectMentionMarker(content: string, appId: string): boolean {
 export function proactiveGate(options: ProactiveGateOptions) {
   const { config, logger, cooldown, observer, activity, idle } = options;
   const proactive = config.proactive;
+  const quietHours = config.quietHours;
   const gate = createLexicalGate({ minLength: proactive.minLength, minScore: proactive.minScore });
   const appId = config.appId;
 
@@ -126,9 +128,26 @@ export function proactiveGate(options: ProactiveGateOptions) {
         return;
       }
 
+      // ── 作息（深夜模式）：未点名的群消息在安静时段一律不接话 ──
+      // 被 @ 的已在上方放行；这里挡的只是自主接话。留痕走 ctx.stop，
+      // 与 not-worth / cooldown / hourly-cap 同一排，排障时一眼能分清原因。
+      if (isQuietNow(quietHours.enabled, quietHours.start, quietHours.end)) {
+        state.proactive = { mode: 'observed', reason: 'quiet-hours', blocked: 'quiet-hours' };
+        logger.debug('im-qqbot: proactive skip (quiet hours)');
+        observer.log({
+          gid: groupId,
+          decision: 'observed',
+          reason: 'quiet-hours',
+          rawEventType,
+          mentionState: state.mention,
+          chars: rawContent.length,
+        });
+        ctx.stop('proactive:quiet-hours');
+        return;
+      }
+
       // 这条 @ 的是别人 → 那轮对话的方向是别人
       const mentionedOthers = mentions.length > 0 && !mentions.some((m) => m?.is_you === true);
-
       const text = stripMentions(rawContent);
 
       // 时机特征（M1）：活跃度已在入口记过，这里只算当前窗口特征。

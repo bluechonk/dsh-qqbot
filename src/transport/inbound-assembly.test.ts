@@ -6,7 +6,7 @@
  * 但**不会有任何报错**——属于必须靠断言守住的一类。
  *
  * 期望的拼接顺序（从前到后）：
- *   群聊氛围 → 群友档案 → 记忆 → 防复读 → 自主接话背景 → 动态上下文 → 引用 → 用户消息
+ *   深夜模式 → 群聊氛围 → 群友档案 → 记忆 → 防复读 → 自主接话背景 → 动态上下文 → 引用 → 用户消息
  */
 import { describe, expect, it, vi } from 'vitest';
 import { assembleAgentBody, buildAmbientLine } from './inbound.ts';
