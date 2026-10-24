@@ -128,6 +128,9 @@ export async function handleInbound(
     maxAliases: config.people.maxAliases,
   });
 
+  // ── 群聊氛围：话多人设最容易在群里刷屏，用硬上下文把「收着点」钉住 ──
+  const ambientLine = buildAmbientLine(scope === 'group');
+
   // ── 长期记忆：把上一轮积累的事实注入旁白（紧跟档案行，同样走旁白区） ──
   const memoryLine = config.people.memory.enabled
     ? buildMemoryLine(profile?.memory, {
@@ -147,7 +150,7 @@ export async function handleInbound(
 
   // ── 组装 agentBody（下载结果经 mwState.downloadedFiles 提供） ──
   const agentBody = assembleAgentBody(
-    msg, mwState, scope, logger, `${profileLine}${memoryLine}${recentLine}`,
+    msg, mwState, scope, logger, `${ambientLine}${profileLine}${memoryLine}${recentLine}`,
   );
 
   if (!agentBody) return;
@@ -274,6 +277,19 @@ export function assembleAgentBody(
   const agentBody = buildAgentBody(base, state.history, isGroup, wasMentioned);
 
   return agentBody;
+}
+
+/**
+ * 群聊氛围注入（纯函数，由 handleInbound 拼进旁白）。
+ *
+ * 活泼话多的人设最容易在群里刷屏：几路话题并行还每条都热情长回复。
+ * 措辞规则的遵守不稳定，这里用硬上下文把「收着点」钉住；私聊不需要。
+ */
+export function buildAmbientLine(isGroup: boolean): string {
+  return isGroup
+    ? '【群聊氛围】这是群聊，周围还有别人：一两句话把话接住就好，'
+      + '别长篇大论刷屏，别每条都抛新问题；对群里其他人保持友好，但主人只有一位。\n'
+    : '';
 }
 
 /**

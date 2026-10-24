@@ -6,10 +6,10 @@
  * 但**不会有任何报错**——属于必须靠断言守住的一类。
  *
  * 期望的拼接顺序（从前到后）：
- *   群友档案 → 防复读 → 自主接话背景 → 动态上下文 → 引用 → 用户消息
+ *   群聊氛围 → 群友档案 → 记忆 → 防复读 → 自主接话背景 → 动态上下文 → 引用 → 用户消息
  */
 import { describe, expect, it, vi } from 'vitest';
-import { assembleAgentBody } from './inbound.ts';
+import { assembleAgentBody, buildAmbientLine } from './inbound.ts';
 import type { Logger } from '../types.ts';
 
 function createLogger(): Logger {
@@ -35,6 +35,14 @@ function state(overrides: Record<string, unknown> = {}) {
 }
 
 const LOG = createLogger();
+
+describe('buildAmbientLine', () => {
+  it('群聊注入收敛提示，私聊为空', () => {
+    expect(buildAmbientLine(true)).toContain('【群聊氛围】');
+    expect(buildAmbientLine(true)).toContain('主人只有一位');
+    expect(buildAmbientLine(false)).toBe('');
+  });
+});
 
 describe('assembleAgentBody', () => {
   it('没有任何提示时，body 就是用户消息本身', () => {
