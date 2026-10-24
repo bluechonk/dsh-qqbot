@@ -208,7 +208,7 @@ export interface AntiRepeatConfig {
 
 /** 群友长期记忆配置 */
 export interface PeopleMemoryConfig {
-  /** 是否启用长期记忆（默认关：有成本、有行为影响，主人确认效果后再开） */
+  /** 是否启用长期记忆（摘要走后台任务，不阻塞回复） */
   enabled: boolean;
   /** 每几轮对话做一次摘要 */
   summarizeEveryTurns: number;
@@ -216,9 +216,9 @@ export interface PeopleMemoryConfig {
   maxFacts: number;
   /** 注入提示时最多带几条事实（群聊自动减半） */
   injectFacts: number;
-  /** 摘要用的模型 provider（留空 = 整个功能不生效） */
+  /** 摘要模型 provider（留空 = 跟随当前会话正在使用的模型） */
   provider: string;
-  /** 摘要用的模型 id */
+  /** 摘要模型 id（留空 = 跟随当前会话正在使用的模型） */
   model: string;
   /** 单次摘要的输出上限（事实都是短句，不必给大值） */
   maxTokens: number;
@@ -281,12 +281,12 @@ export const AntiRepeatSchema: Schema<AntiRepeatConfig> = Schema.object({
 
 /** 群友长期记忆子 Schema */
 export const PeopleMemorySchema: Schema<PeopleMemoryConfig> = Schema.object({
-  enabled: Schema.boolean().default(false).description('启用长期记忆（插件侧异步摘要，默认关）'),
+  enabled: Schema.boolean().default(true).description('启用长期记忆（插件侧异步摘要，不阻塞回复）'),
   summarizeEveryTurns: Schema.number().default(8).description('每几轮对话做一次摘要'),
   maxFacts: Schema.number().default(8).description('每人最多保留几条事实'),
   injectFacts: Schema.number().default(5).description('注入提示时最多带几条事实（群聊自动减半）'),
-  provider: Schema.string().default('').description('摘要模型 provider（留空则长期记忆不生效）'),
-  model: Schema.string().default('').description('摘要模型 id'),
+  provider: Schema.string().default('').description('摘要模型 provider（留空 = 跟随当前会话的模型）'),
+  model: Schema.string().default('').description('摘要模型 id（留空 = 跟随当前会话的模型）'),
   maxTokens: Schema.number().default(512).description('单次摘要输出上限'),
   maxInputChars: Schema.number().default(4000).description('单次摘要输入上限（字）'),
 }).description('群友长期记忆（无工具方案：插件侧异步摘要）');
@@ -358,7 +358,7 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
     enabled: true,
     maxAliases: 2,
     memory: {
-      enabled: false,
+      enabled: true,
       summarizeEveryTurns: 8,
       maxFacts: 8,
       injectFacts: 5,

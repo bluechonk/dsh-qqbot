@@ -26,8 +26,11 @@ const MAX_BUFFER_LINES = 40;
 
 export interface MemoryTriggerOptions {
   appId: string;
-  /** 摘要模型；provider/model 为空则整个触发器不生效（构造时 warn 一次） */
-  model: SummaryModelOptions;
+  /**
+   * 显式指定摘要模型（可选）。留空则**跟随当前会话正在使用的模型**
+   * （由 resolveModel 回调解析：per-peer 偏好 > 配置 > 宿主默认）。
+   */
+  model?: SummaryModelOptions;
   summarizeEveryTurns: number;
   maxFacts: number;
   maxInputChars: number;
@@ -67,19 +70,31 @@ function peerKey(appId: string, scope: ChatScope, scopeId: string): string {
   return `${appId}|${scope}:${scopeId}`;
 }
 
+/** 解析「当前会话正在用的模型」的回调（scope+scopeId → 生效模型路由） */
+export type SessionModelResolver = (
+  scope: ChatScope,
+  scopeId: string,
+) => { provider: string; model: string } | undefined;
+
 export class MemoryTrigger {
   private readonly states = new Map<string, KeyState>();
   private readonly lastSender = new Map<string, string>();
   private readonly busy = new Set<string>();
   private readonly logger: Logger;
   private readonly appId: string;
-  private readonly model: SummaryModelOptions;
+  private readonly model: SummaryModelOptions | undefined;
   private readonly summarizeEveryTurns: number;
   private readonly maxFacts: number;
   private readonly maxInputChars: number;
   private readonly llm: LlmRuntimeLike | undefined;
+  private readonly resolveModel: SessionModelResolver | undefined;
 
-  constructor(options: MemoryTriggerOptions, llm: LlmRuntimeLike | undefined, private readonly store: PeopleStore) {
+  constructor(
+    options: MemoryTriggerOptions,
+    llm: LlmRuntimeLike | undefined,
+    private readonly store: PeopleStore,
+    resolveModel?: SessionModelResolver,
+  ) {
     this.logger = options.logger;
     this.appId = options.appId;
     this.model = options.model;
@@ -87,17 +102,16 @@ export class MemoryTrigger {
     this.maxFacts = options.maxFacts;
     this.maxInputChars = options.maxInputChars;
     this.llm = llm;
+    this.resolveModel = resolveModel;
 
     if (!llm?.stream) {
       this.logger.warn('im-qqbot: llm 服务不可用，长期记忆摘要不会执行（档案与注入不受影响）');
-    } else if (!options.model.provider || !options.model.model) {
-      this.logger.warn('im-qqbot: people.memory.provider/model 未配置，长期记忆摘要不会执行');
     }
   }
 
-  /** 摘要是否真的能跑（供接线方决定要不要调 recordTurn，避免白计数） */
+  /** llm 服务是否可用（模型在触发时解析：显式配置 > 当前会话模型） */
   get usable(): boolean {
-    return Boolean(this.llm?.stream) && Boolean(this.model.provider && this.model.model);
+    return Boolean(this.llm?.stream);
   }
 
   /** 记一轮对话；每满 N 轮异步触发一次摘要（fire-and-forget，不阻塞回复） */
@@ -143,17 +157,28 @@ export class MemoryTrigger {
    * 任何失败只 warn 留痕，绝不影响正常对话。
    */
   private async run(key: string, scope: ChatScope, scopeId: string, openid: string): Promise<void> {
+    const llm = this.llm;
+    if (!llm?.stream) return;
     if (this.busy.has(key)) return;
     this.busy.add(key);
     try {
       const state = this.states.get(key);
       if (state === undefined || state.buffer.length === 0) return;
 
+      // 摘要模型：显式配置优先；未配置则跟随当前会话正在使用的模型
+      const model = this.model?.provider && this.model?.model
+        ? this.model
+        : this.resolveModel?.(scope, scopeId);
+      if (!model?.provider || !model?.model) {
+        this.logger.warn(`im-qqbot: memory summary skipped (no model resolved) for ${key}`);
+        return;
+      }
+
       const params = { appId: this.appId, scope, scopeId, openid };
       const known = this.store.memoryOf(params)?.facts.map((f) => f.text) ?? [];
       const prompt = buildSummaryPrompt(this.clip(state.buffer), known);
 
-      const facts = await summarizeFacts(this.llm!, this.model, prompt, new AbortController().signal);
+      const facts = await summarizeFacts(llm, model, prompt, new AbortController().signal);
       if (facts === undefined) {
         this.logger.warn(`im-qqbot: memory summary discarded (unparseable output) for ${key}`);
         return;
