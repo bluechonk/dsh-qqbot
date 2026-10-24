@@ -11,7 +11,8 @@
 2. 插件层（消息到了吗 / 门控放行了吗 / 连上 QQ 了吗）用 `qqbot-log-triage`，一键只读快照：`pwsh -NoProfile -ExecutionPolicy Bypass -File .agents/skills/qqbot-log-triage/scripts/qqbot-state.ps1`
 3. 会话层（模型被调用了吗 / 每轮为什么结束 / 用的哪个 preset）用 `qqbot-session-triage`：`node session-log.mjs scan 'qqbot:<appId>:group:<群openid>'`
 4. 群友档案记错了要改用 `qqbot-people`：`node people.mjs list` / `show` / `forget` / `export`。
-5. 分层理由与证据分级见 [docs/内部机制.md](docs/内部机制.md)。
+5. 表情包要导入素材、核对素材文件用 `qqbot-stickers`：`node stickers.mjs list` / `import` / `forget`。
+6. 分层理由与证据分级见 [docs/内部机制.md](docs/内部机制.md)。
 
 ## 改完代码怎么生效
 

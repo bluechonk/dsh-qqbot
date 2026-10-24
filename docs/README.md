@@ -41,3 +41,12 @@ node people.mjs list      # 都有谁
 node people.mjs show  <openid|名字>
 node people.mjs forget <openid|名字> <片段>
 ```
+
+表情包素材要导入、素材文件丢了要能查：
+
+```bash
+cd .agents/skills/qqbot-stickers/scripts
+node stickers.mjs list                    # 图库与素材状态
+node stickers.mjs import <素材目录>         # 导入图片（已存在则跳过）
+node stickers.mjs forget <id|文件名片段>
+```
