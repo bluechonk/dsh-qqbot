@@ -37,6 +37,17 @@ export interface DshAgent {
   whenIdle(): Promise<void>;
   /** 运行一个非 turn 维护任务（compact 等需要 idle 时串行执行的操作） */
   runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;
+  /**
+   * 下一轮收件箱——注入**上下文块**（不是普通消息）。
+   *
+   * `followup` 的文档明写「该消息成为自己那一轮的唯一普通消息」，所以要发
+   * 「上下文 + 用户消息」两条时，上下文必须走这里：`prepend('next-turn', ctx)`
+   * 把它放到下一轮最前面，再 `followup` 发用户消息。
+   */
+  readonly inbox: {
+    prepend(target: 'next-turn' | 'next-step', message: unknown): void;
+    append(target: 'next-turn' | 'next-step', message: unknown): void;
+  };
 }
 
 /** compactNow 返回结果的精简视图（只取展示所需字段） */

@@ -165,6 +165,12 @@ export interface ImQQBotConfig {
   stickers: StickersConfig;
   /** 是否展示工具调用成功结果（工具错误始终展示） */
   showToolResults: boolean;
+  /**
+   * 上下文注入方式：true = 独立快照块（走 inbox，与用户消息分层）；
+   * false = 拼在用户消息文本里（老行为）。
+   * 快照块的渲染行为以实测为准，不对就关掉回退。
+   */
+  contextSnapshot: boolean;
   /** 调试模式 */
   debug: boolean;
   /**
@@ -402,6 +408,8 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
     cooldownMs: 600_000,
   }).description('表情包（插件自主配图）'),
   showToolResults: Schema.boolean().default(false).description('是否展示工具调用成功结果（错误始终展示）'),
+  contextSnapshot: Schema.boolean().default(true).description(
+    '上下文用独立快照块注入（走 inbox，与用户消息分层）；关闭则拼进用户消息文本（老行为）'),
   debug: Schema.boolean().default(false),
   rawEventLog: Schema.boolean().default(true).description(
     '记录未知网关事件到 ~/.dsh-qqbot/raw-events.jsonl（用于探测「戳一戳」等平台事件是否推送）'),
