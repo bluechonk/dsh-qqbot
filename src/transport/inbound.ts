@@ -22,6 +22,7 @@ import {
 import { clearGroupHistory } from '../features/history-store.ts';
 import { buildProfileLine, buildMemoryLine, extractAlias, getPeopleStore, type MemoryTrigger } from '../features/people/index.ts';
 import { isQuietNow, QUIET_HINT_LINE } from '../features/quiet-hours.ts';
+import { createContextMessage, type ContextSection } from './context-snapshot.ts';
 import { buildRecentRepliesLine, getReplyHistory } from '../features/anti-repeat/index.ts';
 import type { ProactiveDecision } from '../features/proactive/types.ts';
 import type { MiddlewareContext } from '@tencent-connect/qqbot-nodejs';
@@ -156,9 +157,23 @@ export async function handleInbound(
       )
     : '';
 
+  // ── 上下文分节 ──
+  // 这些是「上下文的上下文」，不是用户说的话。默认走独立快照块（contextSnapshot），
+  // 由 inbox 注入下一轮最前面；关掉则退回老行为——全部拼进用户消息文本。
+  const sections: ContextSection[] = [];
+  if (quietLine !== '') sections.push({ name: 'qqbot.quiet-hours', text: quietLine });
+  if (ambientLine !== '') sections.push({ name: 'qqbot.group-ambient', text: ambientLine });
+  if (profileLine !== '') sections.push({ name: 'qqbot.profile', text: profileLine });
+  if (memoryLine !== '') sections.push({ name: 'qqbot.memory', text: memoryLine });
+  if (recentLine !== '') sections.push({ name: 'qqbot.recent-replies', text: recentLine });
+
+  // 老行为：全部拼进用户消息（contextSnapshot=false 时）
+  const legacyPrefix = sections.map((s) => s.text).join('');
+
   // ── 组装 agentBody（下载结果经 mwState.downloadedFiles 提供） ──
+  // 快照模式下用户消息里不放任何旁白，用户说什么就是什么
   const agentBody = assembleAgentBody(
-    msg, mwState, scope, logger, `${quietLine}${ambientLine}${profileLine}${memoryLine}${recentLine}`,
+    msg, mwState, scope, logger, config.contextSnapshot ? '' : legacyPrefix,
   );
 
   if (!agentBody) return;
@@ -178,6 +193,23 @@ export async function handleInbound(
       logger.error(`fallback reply failed: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`);
     }
     return;
+  }
+
+  // ── 上下文快照：注入下一轮最前面（在用户消息之前）──
+  // 必须在 followup 之前——inbox 的 next-turn 列表先来后到，先注入的排前面。
+  // 失败只 warn：上下文是增强，不能让它把消息发送搞崩。
+  if (config.contextSnapshot) {
+    const ctxMessage = createContextMessage(sections);
+    if (ctxMessage !== undefined) {
+      try {
+        record.agent.inbox.prepend('next-turn', ctxMessage);
+      } catch (err) {
+        logger.warn(
+          `im-qqbot: context snapshot inject failed, falling back to inline: `
+          + `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
   }
 
   // ── 长期记忆：这一轮进缓冲，满 N 轮触发一次异步摘要（不阻塞回复） ──
