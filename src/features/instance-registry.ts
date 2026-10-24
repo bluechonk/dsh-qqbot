@@ -16,6 +16,9 @@ import yaml from 'js-yaml';
 
 import { DEFAULT_SETTINGS_NS } from '../config.ts';
 
+/** 本插件在 profile patch 里的名字（cordis 靠它决定加载哪个插件） */
+export const PLUGIN_PATCH_NAME = '@bluechonk/dsh-qqbot';
+
 /** patch 条目的最小结构 */
 interface PatchEntry {
   id?: string;
@@ -109,6 +112,10 @@ export function nextInstanceId(existing: readonly string[]): string {
  * 新增实例（只加 patch 行，不写凭据）。
  *
  * 返回新实例 id；id 已存在时返回 null（调用方提示冲突）。
+ *
+ * ⚠️ config 里必须写 `settingsNs: id`：ns 守卫读的是 `config.settingsNs`
+ * （空值回落到默认 `im-qqbot`），漏写会让新实例与默认实例**同名冲突**，
+ * 整个插件拒绝启动、所有路由 404（实测踩过）。
  */
 export function addInstance(patchPath: string, botName?: string): string | null {
   const entries = readEntries(patchPath);
@@ -117,8 +124,11 @@ export function addInstance(patchPath: string, botName?: string): string | null 
   if (ids.includes(id)) return null;
   entries.push({
     id,
+    // cordis 靠 name 决定加载哪个插件——漏写这行，新实例根本不会被实例化
+    name: PLUGIN_PATCH_NAME,
     config: {
       enabled: true,
+      settingsNs: id,
       ...(botName ? { botName } : {}),
     },
   });
